@@ -1,26 +1,26 @@
 """
 complex_system_v2.py
 
-复杂系统（Rolling Horizon LP）——多日cap + 在途报单预测 + 延迟分布 + 估重画像 + 采购价（第三优先级软目标）
+复杂系统（Rolling Horizon LP）——多日 cap + 在途报单预测 + 延迟分布 + 估重画像 + 采购价（第三优先级软目标）
 
 核心思想：
 - 规划窗口 [today, today+H-1] 的每日发货吨 x[w,cid,k,t]
-- 多日cap约束：sum_c x[w,cid,k,t] <= cap_forecast[w,k,t]
+- 多日 cap 约束：sum_c x[w,cid,k,t] <= cap_forecast[w,k,t]
 - 在途报单：按延迟分布分摊到未来到货日，得到 pred_mu[cid,d] / pred_hi[cid,d]
 - 新增发货：同样按延迟分布映射到到货日，得到 A_new[cid,d]
 - 总预计到货：Arr_total[cid,d] = pred_mu[cid,d] + A_new[cid,d]
 - 目标（从高到低）：
-  1) 最小化缺口 short（优先完成合同）
-  2) 最小化到货均衡偏差 |Arr_total - q_star|
-  3) 最小化过期浪费期望（到货日>end_day的新增期望）
+  1) 最小化缺口 short（优先完成合同）✅
+  2) 最小化到货均衡偏差 |Arr_total - q_star| ✅
+  3) 最小化过期浪费期望（到货日>end_day 的新增期望）
   4) 最小化采购成本（第三优先级软目标：eta_cost 很小）
   5) 可选：计划稳定性（减少明后天抖动）
 
 输出：
 - 今天执行：x_today_plan[(w,cid,k,today)] = 吨
 - 窗口计划：x_horizon_plan[(w,cid,k,day)] = 吨
-- 到货诊断：arrival_plan[(cid,day)] = 期望总到货（在途+新增）
-- 建议车数（今天）：ceil(吨 / mu_lane)
+- 到货诊断：arrival_plan[(cid,day)] = 期望总到货（在途 + 新增）
+- 建议车数（今天）：ceil(吨 / mu_lane)，支持混装
 """
 
 from __future__ import annotations
@@ -51,22 +51,29 @@ def solve_lp_rolling_H_days(
     in_transit_orders: InTransitOrders,
     weight_profile: WeightProfile,
 
-    # ========= 新增：采购价（第三优先级软目标）=========
-    contract_unit_price: Dict[str, float] | None = None,  # cid -> 合同含票单价（元/吨）
-    warehouse_const: Dict[str, float] | None = None,      # warehouse -> 常数项（元/吨），于娇娇/王菲仓=10
+    # ========= 采购价参数（第三优先级软目标）=========
+    contract_unit_price: Dict[str, float] | None = None,  # cid -> 合同含票单价（元/吨，旧版兼容）
+    contract_unit_price_by_category: Dict[Tuple[str, str], float] | None = None,  # (cid, category) -> 含票单价
+    warehouse_const: Dict[str, float] | None = None,      # warehouse -> 常数项（元/吨），特定仓库 +10
     invoice_factor: float = 1.048,                        # 票点
-    eta_cost: float = 0.0,                                # 成本权重（第三优先级软目标，建议很小，如0.01~1）
+    eta_cost: float = 0.0,                                # 成本权重（建议很小，如 0.01~1）
 
     delay_profile: Optional[DelayProfile] = None,
     global_delay_pmf: Optional[Dict[int, float]] = None,
     rho_intransit: float = 0.9,
-    alpha_short: float = 3000.0,
-    beta_balance: float = 2.0,
-    gamma_waste: float = 80.0,
+    alpha_short: float = 3000.0,                          # 缺口惩罚权重（最高优先级）
+    beta_balance: float = 2.0,                            # 均衡偏差权重
+    gamma_waste: float = 80.0,                            # 过期浪费权重
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
     x_prev: Optional[Dict[Tuple[str, str, str, int], float]] = None,
     stability_weight: float = 0.0,
-):
+) -> Tuple[
+    Dict[Tuple[str, str, str, int], float],  # x_today_plan
+    Dict[Tuple[str, str, str, int], float],  # x_horizon_plan
+    Dict[Tuple[str, int], float],            # arrival_plan
+    Dict[Tuple[str, str, int], int],         # truck_suggest_today (支持混装)
+    Dict[Tuple[str, str, int], Dict[str, float]],  # mixing_details_today
+]:
     """
     返回：
       x_today_plan[(w,cid,k,today)] = 吨
@@ -81,6 +88,8 @@ def solve_lp_rolling_H_days(
         contract_unit_price = {}
     if warehouse_const is None:
         warehouse_const = {}
+    if contract_unit_price_by_category is None:
+        contract_unit_price_by_category = {}
 
     # 1) 在途预测（期望与偏重上界）
     pred_mu, pred_hi = predict_intransit_arrivals_expected(
@@ -95,7 +104,7 @@ def solve_lp_rolling_H_days(
     # 2) 发货日窗口
     ship_days = list(range(today, today + H))
 
-    # 3) 到货日集合（覆盖窗口发货 + 最大delta + 合同有效期）
+    # 3) 到货日集合（覆盖窗口发货 + 最大 delta + 合同有效期）
     max_delta = max(global_delay_pmf.keys()) if global_delay_pmf else 3
     arrival_days_set = set()
     for t in ship_days:
@@ -121,7 +130,7 @@ def solve_lp_rolling_H_days(
                         f"x_{w}_{c.cid}_{k}_{t}", lowBound=0, cat="Continuous"
                     )
 
-    # 5) 能力约束：多日cap
+    # 5) 能力约束：多日 cap
     for w in warehouses:
         for k in categories:
             for t in ship_days:
@@ -170,8 +179,7 @@ def solve_lp_rolling_H_days(
         cid = c.cid
         delivered = float(delivered_so_far.get(cid, 0.0))
 
-        remain_start = max(today, c.start_day)  # 剩余发货日从今日开始
-        
+        remain_start = max(today, c.start_day)
         if remain_start > c.end_day:
             continue
 
@@ -186,7 +194,7 @@ def solve_lp_rolling_H_days(
             future_intransit_mu += float(pred_mu.get((cid, d), 0.0))
             future_intransit_hi += float(pred_hi.get((cid, d), 0.0))
 
-        # 新增发货（有效期内）期望
+        # 新增发货（有效期内）期望：从今天开始算
         add_valid_terms = []
         for d in range(today, c.end_day + 1):
             expr = A_new.get((cid, d), None)
@@ -194,24 +202,30 @@ def solve_lp_rolling_H_days(
                 add_valid_terms.append(expr)
         add_valid_expr = pulp.lpSum(add_valid_terms) if add_valid_terms else 0
 
-        # q_star: 剩余需求 / 剩余发货天数
-        R = max(0.0, c.Q - delivered - rho_intransit * future_intransit_mu)
-        q_star = R / T
+        # q_star: 均衡到货目标（考虑在途和已到货）
+        # ✅ 优化：q_star = (0.95*Q - delivered - future_intransit) / T + 已有在途的日均
+        # 这样均衡目标更合理，不会为了均衡而少发货
+        R = max(0.0, 0.95 * c.Q - delivered - rho_intransit * future_intransit_mu)
+        target_daily = R / T
+        # q_star 包含已有在途的日均贡献
+        q_star = target_daily + (rho_intransit * future_intransit_mu) / T
 
-        # 缺口
+        # 缺口（允许±5% 冗余）
         short[cid] = pulp.LpVariable(f"short_{cid}", lowBound=0)
         expected_total = delivered + future_intransit_mu + add_valid_expr
-        model += (short[cid] >= c.Q - expected_total, f"ShortDef_{cid}")
+        # ✅ 目标：至少完成 95% 合同量
+        model += (short[cid] >= 0.95 * c.Q - expected_total, f"ShortDef_{cid}")
 
-        # 超发硬约束（保守：在途用hi）
+        # 超发硬约束（保守：在途用 hi，允许 105%）
         model += (delivered + future_intransit_hi + add_valid_expr <= 1.05 * c.Q, f"OverCap_{cid}")
 
-        # 到货均衡（有效期内每一天，从合同开始日算起）
+        # 到货均衡（有效期内每一天，从今天开始算）
+        # ✅ 优化：只均衡新增发货，不包含在途（在途已固定）
         for d in range(today, c.end_day + 1):
-            total_arrival_d = float(pred_mu.get((cid, d), 0.0)) + A_new.get((cid, d), 0)
+            add_expr = A_new.get((cid, d), 0)
             dev_pos[(cid, d)] = pulp.LpVariable(f"dev_pos_{cid}_{d}", lowBound=0)
             dev_neg[(cid, d)] = pulp.LpVariable(f"dev_neg_{cid}_{d}", lowBound=0)
-            model += (total_arrival_d - q_star == dev_pos[(cid, d)] - dev_neg[(cid, d)], f"Balance_{cid}_{d}")
+            model += (add_expr - target_daily == dev_pos[(cid, d)] - dev_neg[(cid, d)], f"Balance_{cid}_{d}")
 
     # 8) 计划稳定性（可选）
     stab_terms = []
@@ -233,12 +247,15 @@ def solve_lp_rolling_H_days(
     obj_stab = pulp.lpSum(stab_terms) if stab_terms else 0
 
     # 采购成本（第三优先级软目标）
+    def get_price(w: str, cid: str, k: str) -> float:
+        """获取采购单价（支持品类单价 + 仓库加价）"""
+        # 优先使用品类单价
+        unit_price = contract_unit_price_by_category.get((cid, k), contract_unit_price.get(cid, 0.0))
+        const = float(warehouse_const.get(w, 0.0))
+        return calc_purchase_price_per_ton(unit_price, invoice_factor=invoice_factor, const=const)
+
     obj_cost = pulp.lpSum(
-        var * calc_purchase_price_per_ton(
-            contract_unit_price=float(contract_unit_price.get(cid, 0.0)),
-            invoice_factor=invoice_factor,
-            const=float(warehouse_const.get(w, 0.0)),
-        )
+        var * get_price(w, cid, k)
         for (w, cid, k, t), var in x.items()
     ) if eta_cost and eta_cost > 0 else 0
 
@@ -266,7 +283,7 @@ def solve_lp_rolling_H_days(
     arrival_plan: Dict[Tuple[str, int], float] = {}
     for c in contracts:
         cid = c.cid
-        for d in range(max(today + 1, c.start_day), c.end_day + 1):
+        for d in range(max(today, c.start_day), c.end_day + 1):
             pred = float(pred_mu.get((cid, d), 0.0))
             add_expr = A_new.get((cid, d), None)
             add_val = float(add_expr.value()) if add_expr is not None else 0.0

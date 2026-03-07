@@ -162,7 +162,14 @@ def main():
     ]
 
     # 采购价输入（示例）
-    contract_unit_price = {"C1": 520.0, "C2": 480.0}
+    # ✅ 新版：支持品类单价（不同品类价格不同）
+    contract_unit_price_by_category = {
+        # C1 合同：品类 A=520 元/吨，品类 B=500 元/吨
+        ("C1", "A"): 520.0, ("C1", "B"): 500.0,
+        # C2 合同：品类 A=480 元/吨，品类 B=460 元/吨
+        ("C2", "A"): 480.0, ("C2", "B"): 460.0,
+    }
+    contract_unit_price = {"C1": 520.0, "C2": 480.0}  # 旧版兼容
     # 仓库常数项：示例 W2 为于娇娇/王菲体系（+10）
     warehouse_const = {"W1": 0.0, "W2": 10.0, "W3": 0.0}
 
@@ -212,6 +219,7 @@ def main():
         in_transit_orders=in_transit_orders,
         weight_profile=weight_profile,
         contract_unit_price=contract_unit_price,
+        contract_unit_price_by_category=contract_unit_price_by_category,  # ✅ 新品类单价
         warehouse_const=warehouse_const,
         invoice_factor=1.048,
         eta_cost=0.2,
