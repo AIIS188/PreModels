@@ -1,0 +1,187 @@
+"""
+simple_system_v2.py
+
+简单系统（Baseline）——单日cap + 在途期望 + 临期优先贪心 + 价格作为第三优先级
+
+核心思想：
+1) 对每个合同 c：
+   - 剩余需求 = Q - (已到货 + rho * 在途期望到货)
+   - 剩余有效到货天数 T_remain
+   - 当日目标吨：target_c = max(0, 剩余需求 / T_remain)
+
+2) 用当天 cap_today[w,k] 贪心分配：
+   - 合同排序：临期优先（end_day近优先），缺口大次优先
+   - 仓库排序（同一品类）：准时概率高优先，其次价格低优先（第三优先级），再cap大优先
+
+3) 输出：今天吨计划 + 建议车数（按 mu 换算）
+
+说明：
+- 不需要求解器（不依赖 pulp）
+- 仅用当天cap，不考虑未来cap
+- 价格是软偏好：只影响仓库优先级，不会牺牲交付逻辑（除非你主动改规则）
+"""
+
+from __future__ import annotations
+from typing import Dict, List, Tuple
+import copy
+
+from common_utils_v2 import (
+    Contract, CapToday, Delivered, WeightProfile, DelayProfile, InTransitOrders,
+    default_global_delay_pmf, get_delay_dist,
+    predict_intransit_arrivals_expected, intransit_total_expected_in_valid_window,
+    suggest_trucks_from_tons_plan, calc_purchase_price_per_ton
+)
+
+
+def simple_daily_planner(
+    warehouses: List[str],
+    categories: List[str],
+    today: int,
+    contracts: List[Contract],
+    cap_today: CapToday,
+    delivered_so_far: Delivered,
+    in_transit_orders: InTransitOrders,
+    weight_profile: WeightProfile,
+
+    # ========= 新增：采购价（第三优先级软目标）=========
+    contract_unit_price: Dict[str, float] | None = None,  # cid -> 合同含票单价（元/吨）
+    warehouse_const: Dict[str, float] | None = None,      # warehouse -> 常数项（元/吨），于娇娇/王菲仓=10
+    invoice_factor: float = 1.048,                        # 票点
+
+    delay_profile: DelayProfile | None = None,
+    global_delay_pmf: Dict[int, float] | None = None,
+    rho_intransit: float = 0.9,
+    default_mu_hi: Tuple[float, float] = (32.0, 35.0),
+) -> Tuple[Dict[Tuple[str, str, str, int], float], Dict[Tuple[str, int], float], Dict[Tuple[str, str, str, int], int]]:
+    """
+    返回：
+      x_plan_today[(w,cid,k,today)] = 吨
+      arrival_diag[(cid, day)] = 期望到货吨（在途期望 + 今日新增期望），用于诊断
+      truck_suggest[(w,cid,k,today)] = 建议车数
+    """
+    if global_delay_pmf is None:
+        global_delay_pmf = default_global_delay_pmf()
+    if contract_unit_price is None:
+        contract_unit_price = {}
+    if warehouse_const is None:
+        warehouse_const = {}
+
+    # 1) 在途预测（期望到货）
+    pred_mu, _pred_hi = predict_intransit_arrivals_expected(
+        contracts=contracts,
+        in_transit_orders=in_transit_orders,
+        weight_profile=weight_profile,
+        delay_profile=delay_profile,
+        global_delay_pmf=global_delay_pmf,
+        default_mu_hi=default_mu_hi,
+    )
+
+    # 2) 计算每个合同的当日目标 target_c
+    contract_targets: Dict[str, float] = {}
+    for c in contracts:
+        remain_start = max(today + 1, c.start_day)
+        if remain_start > c.end_day:
+            contract_targets[c.cid] = 0.0
+            continue
+
+        T_remain = c.end_day - remain_start + 1
+        delivered = float(delivered_so_far.get(c.cid, 0.0))
+        intransit_mu_valid = intransit_total_expected_in_valid_window(
+            c.cid, pred_mu, remain_start, c.end_day
+        )
+        h = delivered + rho_intransit * intransit_mu_valid
+        remaining = max(0.0, c.Q - h)
+        contract_targets[c.cid] = remaining / T_remain
+
+    # 3) 合同优先级：临期优先（越临期越优先）
+    def urgency_key(c: Contract) -> Tuple[int, float]:
+        days_left = max(0, c.end_day - today)
+        return (days_left, -contract_targets.get(c.cid, 0.0))
+
+    contracts_sorted = sorted(contracts, key=urgency_key)
+
+    # 4) cap剩余
+    cap_rem = copy.deepcopy(cap_today)
+
+    # 5) 分配发货：x_today[(w,cid,k,today)]
+    x_today: Dict[Tuple[str, str, str, int], float] = {}
+
+    # 工具：计算某仓->该合同收货方 “到期内到达概率”
+    def p_on_time(w: str, receiver: str, end_day: int) -> float:
+        dist = get_delay_dist(w, receiver, delay_profile=delay_profile, global_delay_pmf=global_delay_pmf)
+        prob = 0.0
+        for delta, p in dist.items():
+            if today + int(delta) <= end_day:
+                prob += float(p)
+        return prob
+
+    for c in contracts_sorted:
+        need = float(contract_targets.get(c.cid, 0.0))
+        if need <= 1e-6:
+            continue
+
+        days_left = max(0, c.end_day - today)
+
+        for k in categories:
+            if k not in c.allowed_categories:
+                continue
+            if need <= 1e-6:
+                break
+
+            total_cap_k = sum(float(cap_rem.get((w, k), 0.0)) for w in warehouses)
+            if total_cap_k <= 1e-6:
+                continue
+
+            wh_rank = []
+            for w in warehouses:
+                cap_wk = float(cap_rem.get((w, k), 0.0))
+                if cap_wk <= 1e-6:
+                    continue
+                p = p_on_time(w, c.receiver, c.end_day)
+                if days_left <= 2 and p < 0.9:
+                    continue
+
+                unit_price = float(contract_unit_price.get(c.cid, 0.0))
+                const = float(warehouse_const.get(w, 0.0))
+                price = calc_purchase_price_per_ton(
+                    contract_unit_price=unit_price,
+                    invoice_factor=invoice_factor,
+                    const=const,
+                )
+                wh_rank.append((w, p, price, cap_wk))
+
+            # 排序：准时概率高优先，其次价格低优先，再次cap高优先
+            wh_rank.sort(key=lambda x: (-x[1], x[2], -x[3]))
+
+            for (w, p, price, cap_wk) in wh_rank:
+                if need <= 1e-6:
+                    break
+                alloc = min(need, float(cap_rem.get((w, k), 0.0)))
+                if alloc <= 1e-9:
+                    continue
+                x_today[(w, c.cid, k, today)] = x_today.get((w, c.cid, k, today), 0.0) + alloc
+                cap_rem[(w, k)] = float(cap_rem.get((w, k), 0.0)) - alloc
+                need -= alloc
+
+    # 6) 到货诊断：在途期望 + 今日新增期望
+    arrival_diag: Dict[Tuple[str, int], float] = {}
+    for (cid, d), qty in pred_mu.items():
+        if qty > 1e-9:
+            arrival_diag[(cid, d)] = arrival_diag.get((cid, d), 0.0) + float(qty)
+
+    for (w, cid, k, t), tons in x_today.items():
+        c = next(cc for cc in contracts if cc.cid == cid)
+        dist = get_delay_dist(w, c.receiver, delay_profile=delay_profile, global_delay_pmf=global_delay_pmf)
+        for delta, p in dist.items():
+            d = today + int(delta)
+            arrival_diag[(cid, d)] = arrival_diag.get((cid, d), 0.0) + float(tons) * float(p)
+
+    # 7) 车数建议
+    truck_suggest = suggest_trucks_from_tons_plan(
+        tons_plan=x_today,
+        contracts=contracts,
+        weight_profile=weight_profile,
+        default_mu_hi=default_mu_hi,
+    )
+
+    return x_today, arrival_diag, truck_suggest
