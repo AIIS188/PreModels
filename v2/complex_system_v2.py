@@ -170,7 +170,8 @@ def solve_lp_rolling_H_days(
         cid = c.cid
         delivered = float(delivered_so_far.get(cid, 0.0))
 
-        remain_start = max(today + 1, c.start_day)
+        remain_start = max(today, c.start_day)  # 剩余发货日从今日开始
+        
         if remain_start > c.end_day:
             continue
 
@@ -178,22 +179,22 @@ def solve_lp_rolling_H_days(
         if T <= 0:
             continue
 
-        # 在途预测（有效期内）
+        # 在途预测（有效期内）：只计算今天及以后到达的
         future_intransit_mu = 0.0
         future_intransit_hi = 0.0
-        for d in range(remain_start, c.end_day + 1):
+        for d in range(today + 1, c.end_day + 1):
             future_intransit_mu += float(pred_mu.get((cid, d), 0.0))
             future_intransit_hi += float(pred_hi.get((cid, d), 0.0))
 
         # 新增发货（有效期内）期望
         add_valid_terms = []
-        for d in range(remain_start, c.end_day + 1):
+        for d in range(today, c.end_day + 1):
             expr = A_new.get((cid, d), None)
             if expr is not None:
                 add_valid_terms.append(expr)
         add_valid_expr = pulp.lpSum(add_valid_terms) if add_valid_terms else 0
 
-        # q_star
+        # q_star: 剩余需求 / 剩余发货天数
         R = max(0.0, c.Q - delivered - rho_intransit * future_intransit_mu)
         q_star = R / T
 
@@ -205,8 +206,8 @@ def solve_lp_rolling_H_days(
         # 超发硬约束（保守：在途用hi）
         model += (delivered + future_intransit_hi + add_valid_expr <= 1.05 * c.Q, f"OverCap_{cid}")
 
-        # 到货均衡（有效期内每一天）
-        for d in range(remain_start, c.end_day + 1):
+        # 到货均衡（有效期内每一天，从合同开始日算起）
+        for d in range(today, c.end_day + 1):
             total_arrival_d = float(pred_mu.get((cid, d), 0.0)) + A_new.get((cid, d), 0)
             dev_pos[(cid, d)] = pulp.LpVariable(f"dev_pos_{cid}_{d}", lowBound=0)
             dev_neg[(cid, d)] = pulp.LpVariable(f"dev_neg_{cid}_{d}", lowBound=0)

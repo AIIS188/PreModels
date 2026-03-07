@@ -1,7 +1,7 @@
 """
 simple_system_v2.py
 
-简单系统（Baseline）——单日 cap + 在途期望 + 临期优先贪心 + 价格作为第三优先级
+简单系统（Baseline）——单日 cap + 在途期望 + 临期优先贪心
 
 核心思想：
 1) 对每个合同 c：
@@ -11,14 +11,12 @@ simple_system_v2.py
 
 2) 用当天 cap_today[w,k] 贪心分配：
    - 合同排序：临期优先（end_day 近优先），缺口大次优先
-   - 仓库排序（同一品类）：准时概率高优先，其次价格低优先（第三优先级），再 cap 大优先
-
-3) 输出：今天吨计划 + 建议车数（按 mu 换算，支持混装）
+   - 仓库排序：准时概率高优先，其次 cap 大优先
+   - ✅ 合同只认总重：品类在允许范围内自由分配，总重达标即可
 
 说明：
 - 不需要求解器（不依赖 pulp）
 - 仅用当天 cap，不考虑未来 cap
-- 价格是软偏好：只影响仓库优先级，不会牺牲交付逻辑（除非你主动改规则）
 - ✅ 支持混装：同一 (warehouse, cid, day) 的不同品类可以拼车
 """
 
@@ -44,10 +42,10 @@ def simple_daily_planner(
     in_transit_orders: InTransitOrders,
     weight_profile: WeightProfile,
 
-    # ========= 新增：采购价（第三优先级软目标）=========
-    contract_unit_price: Dict[str, float] | None = None,  # cid -> 合同含票单价（元/吨）
-    warehouse_const: Dict[str, float] | None = None,      # warehouse -> 常数项（元/吨），于娇娇/王菲仓=10
-    invoice_factor: float = 1.048,                        # 票点
+    # ========= 参数（第三优先级软目标，暂时无用）=========
+    contract_unit_price: Dict[str, float] | None = None,
+    warehouse_const: Dict[str, float] | None = None,
+    invoice_factor: float = 1.048,
 
     delay_profile: DelayProfile | None = None,
     global_delay_pmf: Dict[int, float] | None = None,
@@ -63,10 +61,6 @@ def simple_daily_planner(
     """
     if global_delay_pmf is None:
         global_delay_pmf = default_global_delay_pmf()
-    if contract_unit_price is None:
-        contract_unit_price = {}
-    if warehouse_const is None:
-        warehouse_const = {}
 
     # 1) 在途预测（期望到货）
     pred_mu, _pred_hi = predict_intransit_arrivals_expected(
@@ -78,22 +72,29 @@ def simple_daily_planner(
         default_mu_hi=default_mu_hi,
     )
 
-    # 2) 计算每个合同的当日目标 target_c
+    # 2) 计算每个合同的当日目标 target_c（总重，不区分品类）
     contract_targets: Dict[str, float] = {}
     for c in contracts:
-        remain_start = max(today + 1, c.start_day)
+        remain_start = max(today, c.start_day)  # 剩余发货日从今日开始
+        
         if remain_start > c.end_day:
             contract_targets[c.cid] = 0.0
             continue
 
         T_remain = c.end_day - remain_start + 1
         delivered = float(delivered_so_far.get(c.cid, 0.0))
+        
+        # ✅ 修复：在途期望只计算今天及以后到达的（今天到达的不算，因为今天快结束了）
         intransit_mu_valid = intransit_total_expected_in_valid_window(
-            c.cid, pred_mu, remain_start, c.end_day
+            c.cid, pred_mu, today + 1, c.end_day
         )
+        
         h = delivered + rho_intransit * intransit_mu_valid
         remaining = max(0.0, c.Q - h)
-        contract_targets[c.cid] = remaining / T_remain
+        target = remaining / T_remain
+        
+        # ✅ 优化：设置最小发货量（避免太少无法装车）
+        contract_targets[c.cid] = max(target, 32.0)  # 至少 1 车
 
     # 3) 合同优先级：临期优先（越临期越优先）
     def urgency_key(c: Contract) -> Tuple[int, float]:
@@ -106,6 +107,7 @@ def simple_daily_planner(
     cap_rem = copy.deepcopy(cap_today)
 
     # 5) 分配发货：x_today[(w,cid,k,today)]
+    # ✅ 修改：合同只认总重，品类自由分配
     x_today: Dict[Tuple[str, str, str, int], float] = {}
 
     # 工具：计算某仓->该合同收货方 "到期内到达概率"
@@ -124,46 +126,42 @@ def simple_daily_planner(
 
         days_left = max(0, c.end_day - today)
 
-        for k in categories:
-            if k not in c.allowed_categories:
-                continue
-            if need <= 1e-6:
-                break
-
-            total_cap_k = sum(float(cap_rem.get((w, k), 0.0)) for w in warehouses)
-            if total_cap_k <= 1e-6:
-                continue
-
-            wh_rank = []
+        # ✅ 优化：多轮分配，直到需求满足或无可用产能
+        while need > 1e-6:
+            # 每轮重新构建可用 (warehouse, category) 组合
+            wh_k_rank = []
             for w in warehouses:
-                cap_wk = float(cap_rem.get((w, k), 0.0))
-                if cap_wk <= 1e-6:
-                    continue
-                p = p_on_time(w, c.receiver, c.end_day)
-                if days_left <= 2 and p < 0.9:
-                    continue
+                for k in categories:
+                    if k not in c.allowed_categories:
+                        continue
+                    
+                    cap_wk = float(cap_rem.get((w, k), 0.0))
+                    if cap_wk <= 1e-6:
+                        continue
+                    
+                    p = p_on_time(w, c.receiver, c.end_day)
+                    # 临期时过滤掉准时率低的
+                    if days_left <= 2 and p < 0.9:
+                        continue
+                    
+                    wh_k_rank.append((w, k, p, cap_wk))
 
-                unit_price = float(contract_unit_price.get(c.cid, 0.0))
-                const = float(warehouse_const.get(w, 0.0))
-                price = calc_purchase_price_per_ton(
-                    contract_unit_price=unit_price,
-                    invoice_factor=invoice_factor,
-                    const=const,
-                )
-                wh_rank.append((w, p, price, cap_wk))
+            if not wh_k_rank:
+                break  # 无可用产能
 
-            # 排序：准时概率高优先，其次价格低优先，再次 cap 高优先
-            wh_rank.sort(key=lambda x: (-x[1], x[2], -x[3]))
+            # 排序：准时概率高优先，其次 cap 大优先
+            wh_k_rank.sort(key=lambda x: (-x[2], -x[3]))
 
-            for (w, p, price, cap_wk) in wh_rank:
-                if need <= 1e-6:
-                    break
-                alloc = min(need, float(cap_rem.get((w, k), 0.0)))
-                if alloc <= 1e-9:
-                    continue
-                x_today[(w, c.cid, k, today)] = x_today.get((w, c.cid, k, today), 0.0) + alloc
-                cap_rem[(w, k)] = float(cap_rem.get((w, k), 0.0)) - alloc
-                need -= alloc
+            # 从优先级最高的组合分配
+            (w, k, p, cap_wk) = wh_k_rank[0]
+            alloc = min(need, cap_wk)
+            
+            if alloc <= 1e-9:
+                break
+            
+            x_today[(w, c.cid, k, today)] = x_today.get((w, c.cid, k, today), 0.0) + alloc
+            cap_rem[(w, k)] = cap_wk - alloc
+            need -= alloc
 
     # 6) 到货诊断：在途期望 + 今日新增期望
     arrival_diag: Dict[Tuple[str, int], float] = {}
