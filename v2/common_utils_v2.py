@@ -156,16 +156,91 @@ def suggest_trucks_from_tons_plan(
     contracts: List[Contract],
     weight_profile: WeightProfile,
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
-) -> Dict[Tuple[str, str, str, int], int]:
-    """将吨计划换算为建议车数：trucks = ceil(tons / mu_lane)"""
+    allow_mixing: bool = True,  # 新增：是否允许混装
+) -> Dict[Tuple[str, str, int], int]:
+    """
+    将吨计划换算为建议车数
+    
+    参数:
+        tons_plan: {(w, cid, k, t): tons} 吨计划
+        allow_mixing: 是否允许混装（默认 True）
+            - True: 同一 (w, cid, t) 的不同品类可以拼车
+            - False: 每个品类单独计算车数（旧逻辑，向后兼容）
+    
+    返回:
+        {(w, cid, t): trucks} 车数建议
+    
+    混装模式下的额外输出:
+        可通过 get_mixing_details 获取每车的品类分配明细
+    """
     receiver_by_cid, _ = build_cid_receiver_maps(contracts)
-    truck_suggest: Dict[Tuple[str, str, str, int], int] = {}
+    
+    if not allow_mixing:
+        # 旧逻辑：按品类单独计算车数（向后兼容）
+        truck_suggest: Dict[Tuple[str, str, int], int] = {}
+        for (w, cid, k, t), tons in tons_plan.items():
+            receiver = receiver_by_cid.get(cid, "")
+            mu, _hi = get_mu_hi(w, receiver, k, weight_profile, default_mu_hi=default_mu_hi)
+            trucks = int(math.ceil(float(tons) / mu))
+            key = (w, cid, t)
+            truck_suggest[key] = truck_suggest.get(key, 0) + trucks
+        return truck_suggest
+    
+    # 新逻辑：支持混装
+    # 1. 按 (w, cid, t) 聚合吨数
+    tons_by_lane: Dict[Tuple[str, str, int], List[Tuple[str, float]]] = {}
     for (w, cid, k, t), tons in tons_plan.items():
+        key = (w, cid, t)
+        if key not in tons_by_lane:
+            tons_by_lane[key] = []
+        tons_by_lane[key].append((k, tons))
+    
+    # 2. 换算车数（按 lane 估重，混装时使用加权平均 mu）
+    truck_suggest: Dict[Tuple[str, str, int], int] = {}
+    for (w, cid, t), category_tons in tons_by_lane.items():
         receiver = receiver_by_cid.get(cid, "")
-        mu, _hi = get_mu_hi(w, receiver, k, weight_profile, default_mu_hi=default_mu_hi)
-        trucks = int(math.ceil(float(tons) / mu))
-        truck_suggest[(w, cid, k, t)] = trucks
+        
+        # 计算加权平均 mu
+        total_tons = sum(tons for _, tons in category_tons)
+        if total_tons <= 0:
+            continue
+        
+        weighted_mu = 0.0
+        for k, tons in category_tons:
+            mu_k, _ = get_mu_hi(w, receiver, k, weight_profile, default_mu_hi=default_mu_hi)
+            weighted_mu += mu_k * (tons / total_tons)
+        
+        trucks = int(math.ceil(total_tons / weighted_mu))
+        truck_suggest[(w, cid, t)] = trucks
+    
     return truck_suggest
+
+
+def get_mixing_details(
+    tons_plan: Dict[Tuple[str, str, str, int], float],
+    contracts: List[Contract],
+    weight_profile: WeightProfile,
+    default_mu_hi: Tuple[float, float] = (32.0, 35.0),
+) -> Dict[Tuple[str, str, int], Dict[str, float]]:
+    """
+    获取混装明细：每车的品类分配建议
+    
+    返回:
+        {(w, cid, t): {category: tons}} 每车的品类吨数分配
+    
+    注：这是简化版本，实际装车时可能需要更复杂的配载优化
+    """
+    receiver_by_cid, _ = build_cid_receiver_maps(contracts)
+    
+    # 按 (w, cid, t) 聚合品类吨数
+    mixing: Dict[Tuple[str, str, int], Dict[str, float]] = {}
+    for (w, cid, k, t), tons in tons_plan.items():
+        key = (w, cid, t)
+        if key not in mixing:
+            mixing[key] = {}
+        mixing[key][k] = mixing[key].get(k, 0.0) + tons
+    
+    return mixing
 
 
 def calc_purchase_price_per_ton(

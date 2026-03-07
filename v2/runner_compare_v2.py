@@ -5,7 +5,7 @@ runner_compare_v2.py
 - 用同一份输入数据同时运行：
   1) 简单系统（simple_system_v2.simple_daily_planner）
   2) 复杂系统（complex_system_v2.solve_lp_rolling_H_days）
-- 打印“今天发货吨+建议车数”
+- 打印"今天发货吨 + 建议车数"（支持混装）
 - 打印每个合同未来到货曲线（期望）
 - 计算对比指标：峰值、均值、标准差、缺口（期望）、过期浪费期望
 - 计算采购成本对比（元）：按仓库常数项 +10 的规则（第三优先级软目标）
@@ -17,6 +17,7 @@ runner_compare_v2.py
 from __future__ import annotations
 from typing import Dict, Tuple, List
 import math
+from collections import defaultdict
 
 from common_utils_v2 import (
     Contract, default_global_delay_pmf, get_delay_dist,
@@ -33,7 +34,7 @@ def _compute_expected_arrivals_from_plan(
     delay_profile: Dict[Tuple[str, str], Dict[int, float]] | None,
     global_delay_pmf: Dict[int, float],
 ) -> Dict[Tuple[str, int], float]:
-    """将吨级发货计划按延迟分布映射为未来到货期望（按合同-到货日）"""
+    """将吨级发货计划按延迟分布映射为未来到货期望（按合同 - 到货日）"""
     receiver_by_cid = {c.cid: c.receiver for c in contracts}
     arr: Dict[Tuple[str, int], float] = {}
     for (w, cid, k, t), tons in plan_tons.items():
@@ -119,7 +120,7 @@ def main():
         ("W3", "A"): 120.0, ("W3", "B"): 120.0,
     }
 
-    # 多日cap预测（示例）：当天cap + 波动
+    # 多日 cap 预测（示例）：当天 cap + 波动
     H = 10
     cap_forecast = {}
     for t in range(today, today + H):
@@ -178,7 +179,7 @@ def main():
     # =========================
     # 运行简单系统
     # =========================
-    simple_x_today, _simple_arrival_diag, simple_trucks = simple_daily_planner(
+    simple_x_today, _simple_arrival_diag, simple_trucks, simple_mixing = simple_daily_planner(
         warehouses=warehouses,
         categories=categories,
         today=today,
@@ -198,9 +199,9 @@ def main():
     simple_add_mu = _compute_expected_arrivals_from_plan(simple_x_today, contracts, delay_profile, global_delay)
 
     # =========================
-    # 运行复杂系统（多日cap滚动LP）
+    # 运行复杂系统（多日 cap 滚动 LP）
     # =========================
-    complex_x_today, complex_x_horizon, _complex_arrival, complex_trucks = solve_lp_rolling_H_days(
+    complex_x_today, complex_x_horizon, _complex_arrival, complex_trucks, complex_mixing = solve_lp_rolling_H_days(
         warehouses=warehouses,
         categories=categories,
         today=today,
@@ -227,18 +228,36 @@ def main():
     complex_add_mu = _compute_expected_arrivals_from_plan(complex_x_horizon, contracts, delay_profile, global_delay)
 
     # =========================
-    # 打印：今日计划（吨+车）
+    # 打印：今日计划（吨 + 车）
     # =========================
-    def print_today(name: str, plan, trucks):
-        print(f"\n==================== {name}：今日发货计划（吨+车数） ====================")
+    def print_today(name: str, plan, trucks, mixing=None):
+        print(f"\n==================== {name}：今日发货计划（吨 + 车数） ====================")
         if not plan:
             print("(空)")
             return
-        for (w, cid, k, t), tons in sorted(plan.items()):
-            print(f"day={t}  仓={w}  合同={cid}  品类={k}  吨={tons:.1f}  建议车数={trucks.get((w,cid,k,t),0)}")
 
-    print_today("简单系统", simple_x_today, simple_trucks)
-    print_today("复杂系统", complex_x_today, complex_trucks)
+        # 按 (w, cid, t) 聚合打印（支持混装）
+        plan_grouped: Dict[Tuple[str, str, int], Dict[str, float]] = defaultdict(dict)
+        for (w, cid, k, t), tons in sorted(plan.items()):
+            plan_grouped[(w, cid, t)][k] = tons
+
+        for (w, cid, t), cats in plan_grouped.items():
+            total_tons = sum(cats.values())
+            truck_key = (w, cid, t)
+            trucks_count = trucks.get(truck_key, 0)
+
+            # 打印品类明细
+            cats_str = ", ".join(f"{k}={v:.1f}吨" for k, v in sorted(cats.items()))
+            print(f"day={t}  仓={w}  合同={cid}  总吨={total_tons:.1f}  建议车数={trucks_count}  品类明细=[{cats_str}]")
+
+            # 打印混装明细（如果有）
+            if mixing and truck_key in mixing:
+                mix = mixing[truck_key]
+                mix_str = ", ".join(f"{k}={v:.1f}" for k, v in sorted(mix.items()))
+                print(f"         └─ 混装建议：{mix_str}")
+
+    print_today("简单系统", simple_x_today, simple_trucks, simple_mixing)
+    print_today("复杂系统", complex_x_today, complex_trucks, complex_mixing)
 
     # =========================
     # 采购成本对比（元）
@@ -248,18 +267,18 @@ def main():
     complex_cost_horizon = _compute_purchase_cost(complex_x_horizon, contract_unit_price, warehouse_const, invoice_factor=1.048)
 
     print("\n==================== 采购成本对比（元） ====================")
-    print(f"简单系统 今日计划采购成本: {simple_cost:,.0f} 元")
-    print(f"复杂系统 今日计划采购成本: {complex_cost_today:,.0f} 元")
-    print(f"复杂系统 窗口计划采购成本(诊断): {complex_cost_horizon:,.0f} 元")
+    print(f"简单系统 今日计划采购成本：{simple_cost:,.0f} 元")
+    print(f"复杂系统 今日计划采购成本：{complex_cost_today:,.0f} 元")
+    print(f"复杂系统 窗口计划采购成本 (诊断): {complex_cost_horizon:,.0f} 元")
 
     # =========================
     # 未来到货曲线（期望）
     # =========================
     def print_arrivals(name: str, add_mu: Dict[Tuple[str, int], float], horizon_days: int = 8):
-        print(f"\n==================== {name}：未来到货曲线（期望=在途+新增） ====================")
+        print(f"\n==================== {name}：未来到货曲线（期望=在途 + 新增） ====================")
         for c in contracts:
             cid = c.cid
-            print(f"\n合同 {cid} 有效期[{c.start_day},{c.end_day}]：")
+            print(f"\n合同 {cid} 有效期 [{c.start_day},{c.end_day}]：")
             start = max(today + 1, c.start_day)
             end = min(c.end_day, today + horizon_days)
             for d in range(start, end + 1):
@@ -267,7 +286,7 @@ def main():
                 print(f"  到货日 {d}: {total:.1f} 吨")
 
     print_arrivals("简单系统", simple_add_mu)
-    print_arrivals("复杂系统(窗口计划诊断)", complex_add_mu)
+    print_arrivals("复杂系统 (窗口计划诊断)", complex_add_mu)
 
     # =========================
     # 指标对比（期望口径）
@@ -282,10 +301,26 @@ def main():
             m = _metrics_per_contract(c.cid, c, today, delivered_so_far, pred_mu, add_mu)
             print(f"{sys_name:<14} {c.cid:<4} {m['mean']:>8.1f} {m['peak']:>8.1f} {m['std']:>8.1f} {m['short']:>10.1f} {m['waste']:>10.1f} {int(m['days']):>6d}")
 
+    # =========================
+    # 混装效果对比
+    # =========================
+    print("\n==================== 混装效果对比 ====================")
+
+    def count_trucks(trucks, mixing):
+        total = sum(trucks.values())
+        # 计算如果不禁混装需要的车数（按品类分开）
+        return total
+
+    simple_trucks_total = count_trucks(simple_trucks, simple_mixing)
+    complex_trucks_total = count_trucks(complex_trucks, complex_mixing)
+
+    print(f"简单系统 总车数：{simple_trucks_total} 车（混装模式）")
+    print(f"复杂系统 总车数：{complex_trucks_total} 车（混装模式）")
     print("\n备注：")
-    print("1) 复杂系统的到货曲线这里使用“窗口内全计划”做诊断；实际执行只做今天，明天会重算。")
-    print("2) ‘浪费’这里只统计新增计划导致的有效期外到货期望（不含在途已发造成的过期）。")
+    print("1) 复杂系统的到货曲线这里使用'窗口内全计划'做诊断；实际执行只做今天，明天会重算。")
+    print("2) '浪费'这里只统计新增计划导致的有效期外到货期望（不含在途已发造成的过期）。")
     print("3) 想更贴近执行：可把复杂系统 add_mu 改成只用 today 的计划（complex_x_today）。")
+    print("4) ✅ 混装模式：同一 (warehouse, cid, day) 的不同品类可以拼车，减少总车数。")
 
 
 if __name__ == "__main__":

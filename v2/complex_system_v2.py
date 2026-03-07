@@ -35,7 +35,7 @@ except ImportError as e:
 from common_utils_v2 import (
     Contract, CapForecast, Delivered, WeightProfile, DelayProfile, InTransitOrders,
     default_global_delay_pmf, get_delay_dist,
-    predict_intransit_arrivals_expected, suggest_trucks_from_tons_plan,
+    predict_intransit_arrivals_expected, suggest_trucks_from_tons_plan, get_mixing_details,
     calc_purchase_price_per_ton
 )
 
@@ -69,7 +69,11 @@ def solve_lp_rolling_H_days(
 ):
     """
     返回：
-      x_today_plan, x_horizon_plan, arrival_plan, truck_suggest_today
+      x_today_plan[(w,cid,k,today)] = 吨
+      x_horizon_plan[(w,cid,k,day)] = 吨
+      arrival_plan[(cid,day)] = 期望总到货（在途 + 新增）
+      truck_suggest_today[(w,cid,today)] = 建议车数（支持混装）
+      mixing_details_today[(w,cid,today)] = {category: tons} 品类分配明细
     """
     if global_delay_pmf is None:
         global_delay_pmf = default_global_delay_pmf()
@@ -269,12 +273,21 @@ def solve_lp_rolling_H_days(
             if total > 1e-6:
                 arrival_plan[(cid, d)] = total
 
-    # 车数建议（今天）
+    # 车数建议（今天，支持混装）
     truck_suggest_today = suggest_trucks_from_tons_plan(
+        tons_plan=x_today_plan,
+        contracts=contracts,
+        weight_profile=weight_profile,
+        default_mu_hi=default_mu_hi,
+        allow_mixing=True,  # 启用混装模式
+    )
+
+    # 混装明细（用于指导实际装车）
+    mixing_details_today = get_mixing_details(
         tons_plan=x_today_plan,
         contracts=contracts,
         weight_profile=weight_profile,
         default_mu_hi=default_mu_hi,
     )
 
-    return x_today_plan, x_horizon_plan, arrival_plan, truck_suggest_today
+    return x_today_plan, x_horizon_plan, arrival_plan, truck_suggest_today, mixing_details_today
