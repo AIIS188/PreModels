@@ -228,13 +228,18 @@ def solve_lp_rolling_H_days(
             dev_neg[(cid, d)] = pulp.LpVariable(f"dev_neg_{cid}_{d}", lowBound=0)
             model += (add_expr - target_daily == dev_pos[(cid, d)] - dev_neg[(cid, d)], f"Balance_{cid}_{d}")
 
-        # ✅ 新增：每日到货上限约束（防止集中到货）
-        max_daily_arrival = target_daily * max_daily_ratio
-        for d in range(today, c.end_day + 1):
-            # 在途 + 新增的总到货
-            pred_d = float(pred_mu.get((cid, d), 0.0))
-            add_expr = A_new.get((cid, d), 0)
-            model += (pred_d + add_expr <= max_daily_arrival, f"MaxDaily_{cid}_{d}")
+        # ✅ 新增：每日发货上限约束（防止集中发货）
+        # 注意：限制的是发货量 x[w,cid,k,t]，不是到货量
+        max_daily_ship = target_daily * max_daily_ratio
+        for t in range(today, min(today + H, c.end_day + 1)):
+            # 该日发往该合同的总吨数
+            ship_expr = pulp.lpSum(
+                x[(w, cid, k, t)]
+                for w in warehouses
+                for k in categories
+                if (w, cid, k, t) in x
+            )
+            model += (ship_expr <= max_daily_ship, f"MaxDailyShip_{cid}_{t}")
 
     # 8) 计划稳定性（可选）
     stab_terms = []
