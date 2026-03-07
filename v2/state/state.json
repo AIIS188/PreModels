@@ -1,0 +1,67 @@
+{
+  "delivered_so_far": {
+    "C1": 120.0,
+    "C2": 520.0
+  },
+  "in_transit_orders": [
+    {
+      "order_id": "O1001",
+      "cid": "C1",
+      "receiver": "R1",
+      "warehouse": "W1",
+      "category": "A",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O1002",
+      "cid": "C1",
+      "receiver": "R1",
+      "warehouse": "W2",
+      "category": "B",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O2001",
+      "cid": "C2",
+      "receiver": "R2",
+      "warehouse": "W1",
+      "category": "A",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O2002",
+      "cid": "C2",
+      "receiver": "R2",
+      "warehouse": "W1",
+      "category": "A",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O2003",
+      "cid": "C2",
+      "receiver": "R2",
+      "warehouse": "W2",
+      "category": "B",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O2004",
+      "cid": "C2",
+      "receiver": "R2",
+      "warehouse": "W2",
+      "category": "B",
+      "ship_day": 9
+    },
+    {
+      "order_id": "O2005",
+      "cid": "C2",
+      "receiver": "R2",
+      "warehouse": "W3",
+      "category": "A",
+      "ship_day": 9
+    }
+  ],
+  "x_prev": {},
+  "last_updated": "2026-03-08T03:23:35.624831",
+  "last_run_day": 10
+}

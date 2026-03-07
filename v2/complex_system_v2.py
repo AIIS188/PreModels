@@ -64,6 +64,7 @@ def solve_lp_rolling_H_days(
     alpha_short: float = 3000.0,                          # 缺口惩罚权重（最高优先级）
     beta_balance: float = 2.0,                            # 均衡偏差权重
     gamma_waste: float = 80.0,                            # 过期浪费权重
+    max_daily_ratio: float = 1.5,                         # 每日到货上限（日均的倍数，默认 150%）
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
     x_prev: Optional[Dict[Tuple[str, str, str, int], float]] = None,
     stability_weight: float = 0.0,
@@ -226,6 +227,14 @@ def solve_lp_rolling_H_days(
             dev_pos[(cid, d)] = pulp.LpVariable(f"dev_pos_{cid}_{d}", lowBound=0)
             dev_neg[(cid, d)] = pulp.LpVariable(f"dev_neg_{cid}_{d}", lowBound=0)
             model += (add_expr - target_daily == dev_pos[(cid, d)] - dev_neg[(cid, d)], f"Balance_{cid}_{d}")
+
+        # ✅ 新增：每日到货上限约束（防止集中到货）
+        max_daily_arrival = target_daily * max_daily_ratio
+        for d in range(today, c.end_day + 1):
+            # 在途 + 新增的总到货
+            pred_d = float(pred_mu.get((cid, d), 0.0))
+            add_expr = A_new.get((cid, d), 0)
+            model += (pred_d + add_expr <= max_daily_arrival, f"MaxDaily_{cid}_{d}")
 
     # 8) 计划稳定性（可选）
     stab_terms = []
