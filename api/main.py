@@ -46,6 +46,9 @@ class ShipmentPlan(BaseModel):
     tons: float = Field(..., description="吨数")
     trucks: int = Field(0, description="车数")
     receiver: Optional[str] = Field(None, description="收货方")
+    
+    # 新增：更直观的发货建议描述
+    suggestion: str = Field("", description="发货建议描述")
 
 
 class DailyPlan(BaseModel):
@@ -56,6 +59,9 @@ class DailyPlan(BaseModel):
     total_trucks: int = Field(..., description="总车数")
     avg_load: float = Field(..., description="平均载重（吨/车）")
     shipments: List[ShipmentPlan] = Field(..., description="发货明细")
+    
+    # 新增：发货建议总结
+    summary: str = Field("", description="发货建议总结")
 
 
 class ContractProgress(BaseModel):
@@ -224,6 +230,12 @@ def get_today_plan(today: Optional[int] = None):
     total_trucks = sum(s.trucks for s in shipments)
     avg_load = total_tons / total_trucks if total_trucks > 0 else 0
     
+    # 生成发货建议总结
+    summary_parts = []
+    for s in shipments:
+        summary_parts.append(f"{s.warehouse}→{s.receiver}: {s.tons:.1f}吨/{s.trucks}车")
+    summary = "今日发货建议：" + "；".join(summary_parts) + f"。总计{total_tons:.1f}吨，{total_trucks}车。"
+    
     return DailyPlan(
         date=f"Day {today} ({day_to_date(today)})",
         day=today,
@@ -231,6 +243,7 @@ def get_today_plan(today: Optional[int] = None):
         total_trucks=total_trucks,
         avg_load=avg_load,
         shipments=shipments,
+        summary=summary,
     )
 
 
@@ -254,6 +267,7 @@ def get_plan_by_day(day: int):
     for shipment in plan.get('shipments', []):
         cid = shipment['cid']
         contract = contracts.get(cid, {})
+        receiver = contract.get('receiver', 'Unknown')
         
         # 查找对应的车数
         truck_count = 0
@@ -262,18 +276,28 @@ def get_plan_by_day(day: int):
                 truck_count = truck['trucks']
                 break
         
+        # 生成直观的发货建议描述
+        suggestion = f"{shipment['warehouse']} 仓库发往 {receiver}（{cid}）：{shipment['tons']:.2f} 吨，{truck_count} 车，品类：{shipment['category']}"
+        
         shipments.append(ShipmentPlan(
             warehouse=shipment['warehouse'],
             cid=cid,
             category=shipment['category'],
             tons=shipment['tons'],
             trucks=truck_count,
-            receiver=contract.get('receiver'),
+            receiver=receiver,
+            suggestion=suggestion,
         ))
     
     total_tons = sum(s.tons for s in shipments)
     total_trucks = sum(s.trucks for s in shipments)
     avg_load = total_tons / total_trucks if total_trucks > 0 else 0
+    
+    # 生成发货建议总结
+    summary_parts = []
+    for s in shipments:
+        summary_parts.append(f"{s.warehouse}→{s.receiver}: {s.tons:.1f}吨/{s.trucks}车")
+    summary = "今日发货建议：" + "；".join(summary_parts) + f"。总计{total_tons:.1f}吨，{total_trucks}车。"
     
     return DailyPlan(
         date=f"Day {day} ({day_to_date(day)})",
@@ -282,6 +306,7 @@ def get_plan_by_day(day: int):
         total_trucks=total_trucks,
         avg_load=avg_load,
         shipments=shipments,
+        summary=summary,
     )
 
 
