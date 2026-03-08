@@ -1,17 +1,17 @@
 {
-  "today": 10,
+  "today": 13,
   "shipments": [
     {
       "warehouse": "W2",
       "cid": "HT-2026-001",
       "category": "A",
-      "tons": 36.95685
+      "tons": 37.05
     },
     {
       "warehouse": "W1",
       "cid": "HT-2026-002",
       "category": "A",
-      "tons": 61.026429
+      "tons": 61.071429
     }
   ],
   "trucks": [
@@ -20,7 +20,7 @@
       "cid": "HT-2026-001",
       "trucks": 2,
       "mixing": {
-        "A": 36.95685
+        "A": 37.05
       }
     },
     {
@@ -28,7 +28,7 @@
       "cid": "HT-2026-002",
       "trucks": 2,
       "mixing": {
-        "A": 61.026429
+        "A": 61.071429
       }
     }
   ]

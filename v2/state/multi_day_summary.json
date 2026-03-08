@@ -1,0 +1,67 @@
+{
+  "test_date": "2026-03-08T14:56:51.609914",
+  "start_day": 10,
+  "num_days": 5,
+  "daily_results": [
+    {
+      "day": 10,
+      "shipments": 2,
+      "total_tons": 97.98327900000001,
+      "total_trucks": 4,
+      "details": {
+        "W2_HT-2026-001_A_10": 36.95685,
+        "W1_HT-2026-002_A_10": 61.026429
+      }
+    },
+    {
+      "day": 11,
+      "shipments": 2,
+      "total_tons": 98.121429,
+      "total_trucks": 4,
+      "details": {
+        "W2_HT-2026-001_A_11": 37.05,
+        "W1_HT-2026-002_A_11": 61.071429
+      }
+    },
+    {
+      "day": 12,
+      "shipments": 2,
+      "total_tons": 98.121429,
+      "total_trucks": 4,
+      "details": {
+        "W2_HT-2026-001_A_12": 37.05,
+        "W1_HT-2026-002_A_12": 61.071429
+      }
+    },
+    {
+      "day": 13,
+      "shipments": 2,
+      "total_tons": 98.121429,
+      "total_trucks": 4,
+      "details": {
+        "W2_HT-2026-001_A_13": 37.05,
+        "W1_HT-2026-002_A_13": 61.071429
+      }
+    },
+    {
+      "day": 14,
+      "shipments": 2,
+      "total_tons": 98.121429,
+      "total_trucks": 4,
+      "details": {
+        "W2_HT-2026-001_A_14": 37.05,
+        "W1_HT-2026-002_A_14": 61.071429
+      }
+    }
+  ],
+  "contract_progress": {
+    "HT-2026-001": 185.15685000000002,
+    "HT-2026-002": 305.312145
+  },
+  "summary": {
+    "total_days": 5,
+    "total_tons": 490.46899500000006,
+    "total_trucks": 20,
+    "avg_daily_tons": 98.09379900000002
+  }
+}
