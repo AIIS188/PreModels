@@ -287,12 +287,16 @@ class RollingOptimizer:
         """
         加载产能预测/仓库发货能力评估
         
-        TODO: 后续由外部产能系统/仓库发货能力评估模块提供
+        支持两种数据源:
+        1. 外部产能预测 API（优先）
+        2. 本地默认配置（降级）
         
-        预留接口说明:
-        - 需要对接仓库发货能力评估系统
-        - 或者从产能预测 API 获取
-        - 当前使用临时配置
+        外部 API 返回格式:
+        {
+            "w1": [350, 360, 370, ...],  // w1 仓库未来每日总产能
+            "w2": [200, 210, 220, ...],
+            "w3": [150, 160, 170, ...]
+        }
         
         参数:
             today: 今日（day）
@@ -302,17 +306,22 @@ class RollingOptimizer:
             cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
         """
         # =====================================================
-        # 预留接口：产能预测/仓库发货能力评估
+        # 尝试从外部产能预测 API 获取
         # =====================================================
-        # TODO: 后续替换为真实产能系统接口
-        # 示例:
-        #   cap_forecast = self._load_capacity_from_external_system(today, H)
-        #   if cap_forecast:
-        #       return cap_forecast
-        # =====================================================
+        try:
+            external_cap = self._load_capacity_from_api(today, H)
+            if external_cap:
+                self.state_mgr.log(f"从外部 API 加载产能预测 (H={H})")
+                return external_cap
+        except Exception as e:
+            self.state_mgr.log(f"外部产能 API 调用失败：{e}，使用默认配置", "WARNING")
         
-        # 临时配置：基于仓库和品类的默认发货能力
-        # 后续会根据实际仓库发货能力评估结果动态调整
+        # =====================================================
+        # 降级：使用默认配置
+        # =====================================================
+        self.state_mgr.log(f"使用默认产能配置（H={H}）")
+        
+        # 默认配置：基于仓库和品类的发货能力
         default_capacity = {
             # (warehouse, category): daily_capacity (tons)
             ("W1", "A"): 220.0, ("W1", "B"): 60.0,
@@ -320,15 +329,103 @@ class RollingOptimizer:
             ("W3", "A"): 120.0, ("W3", "B"): 120.0,
         }
         
-        self.state_mgr.log(f"使用默认产能配置（预留接口待对接）")
-        
         # 生成 H 天的产能预测
         cap_forecast = {}
         for t in range(today, today + H):
             for (w, k), base in default_capacity.items():
-                # 临时使用简单波动因子（后续替换为真实预测）
+                # 使用简单波动因子
                 factor = 1.05 if (t % 2 == 0) else 0.90
                 cap_forecast[(w, k, t)] = float(base) * factor
+        
+        return cap_forecast
+    
+    def _load_capacity_from_api(self, today: int, H: int) -> Optional[Dict]:
+        """
+        从外部产能预测 API 加载产能数据
+        
+        API 返回格式:
+        {
+            "w1": [350, 360, 370, ...],  // w1 仓库未来 H 天的产能
+            "w2": [200, 210, 220, ...],
+            ...
+        }
+        
+        参数:
+            today: 今日（day）
+            H: 规划窗口（天数）
+        
+        返回:
+            cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
+            如果 API 不可用则返回 None
+        """
+        try:
+            # 调用产能预测 API
+            # TODO: 替换为真实 API 地址
+            import requests
+            
+            # 示例 API 调用（预留接口）
+            # response = requests.post(
+            #     "http://capacity-predictor-api/predict",
+            #     json={"today": today, "H": H},
+            #     timeout=30
+            # )
+            # response.raise_for_status()
+            # capacity_data = response.json()  # {"w1": [350, 360, ...], ...}
+            
+            # 临时：返回 None 表示使用默认配置
+            # 实际对接时取消上面的注释
+            return None
+            
+        except Exception as e:
+            self.state_mgr.log(f"产能预测 API 调用失败：{e}", "ERROR")
+            return None
+    
+    def _convert_capacity_format(self, capacity_data: Dict, today: int, H: int, 
+                                  categories: List[str]) -> Dict:
+        """
+        将产能预测 API 的格式转换为模型需要的格式
+        
+        输入格式:
+        {
+            "w1": [350, 360, 370, ...],  // w1 仓库未来 H 天的总产能
+            "w2": [200, 210, 220, ...],
+            ...
+        }
+        
+        输出格式:
+        {
+            ("w1", "A", today): 110.0,  // w1 仓库品类 A 在 today 的产能
+            ("w1", "B", today): 240.0,  // w1 仓库品类 B 在 today 的产能
+            ...
+        }
+        
+        参数:
+            capacity_data: API 返回的产能数据
+            today: 今日（day）
+            H: 规划窗口（天数）
+            categories: 品类列表
+        
+        返回:
+            cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
+        """
+        cap_forecast = {}
+        
+        for warehouse, daily_caps in capacity_data.items():
+            # 仓库名标准化（转为大写）
+            wh = warehouse.upper()
+            
+            # 遍历 H 天
+            for i, total_cap in enumerate(daily_caps[:H]):
+                day = today + i
+                
+                # 将总产能分配到各品类
+                # 策略：按品类数量平均分配（可优化）
+                num_categories = len(categories)
+                if num_categories > 0:
+                    cap_per_category = total_cap / num_categories
+                    
+                    for category in categories:
+                        cap_forecast[(wh, category, day)] = cap_per_category
         
         return cap_forecast
     

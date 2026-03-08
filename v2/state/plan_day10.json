@@ -5,7 +5,7 @@
       "warehouse": "W1",
       "cid": "HT-2026-001",
       "category": "A",
-      "tons": 37.00275
+      "tons": 24.683778
     },
     {
       "warehouse": "W1",
@@ -18,9 +18,9 @@
     {
       "warehouse": "W1",
       "cid": "HT-2026-001",
-      "trucks": 2,
+      "trucks": 1,
       "mixing": {
-        "A": 37.00275
+        "A": 24.683778
       }
     },
     {

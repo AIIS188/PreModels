@@ -1,0 +1,46 @@
+{
+  "test_time": "2026-03-08T16:59:36.046089",
+  "today": 10,
+  "results": [
+    {
+      "H": 5,
+      "total_tons": 98.029179,
+      "total_trucks": 4,
+      "shipments_count": 2,
+      "details": {
+        "W1→HT-2026-001": 37.00275,
+        "W1→HT-2026-002": 61.026429
+      }
+    },
+    {
+      "H": 10,
+      "total_tons": 98.029179,
+      "total_trucks": 4,
+      "shipments_count": 2,
+      "details": {
+        "W1→HT-2026-001": 37.00275,
+        "W1→HT-2026-002": 61.026429
+      }
+    },
+    {
+      "H": 15,
+      "total_tons": 98.029179,
+      "total_trucks": 4,
+      "shipments_count": 2,
+      "details": {
+        "W1→HT-2026-001": 37.00275,
+        "W1→HT-2026-002": 61.026429
+      }
+    },
+    {
+      "H": 20,
+      "total_tons": 85.710207,
+      "total_trucks": 3,
+      "shipments_count": 2,
+      "details": {
+        "W1→HT-2026-001": 24.683778,
+        "W1→HT-2026-002": 61.026429
+      }
+    }
+  ]
+}
