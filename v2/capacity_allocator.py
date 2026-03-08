@@ -26,15 +26,14 @@ from dataclasses import dataclass, field
 @dataclass
 class AllocationConfig:
     """分配配置"""
-    demand_weight: float = 0.4      # 需求权重
+    demand_weight: float = 0.5      # 需求权重
     urgency_weight: float = 0.3     # 紧急程度权重
-    profit_weight: float = 0.2      # 利润权重
-    inventory_weight: float = 0.1   # 库存权重
+    inventory_weight: float = 0.2   # 库存权重
     
     # 归一化检查
     def __post_init__(self):
         total = (self.demand_weight + self.urgency_weight + 
-                self.profit_weight + self.inventory_weight)
+                self.inventory_weight)
         if abs(total - 1.0) > 0.01:
             raise ValueError(f"权重总和必须为 1.0，当前为{total}")
 
@@ -84,7 +83,7 @@ class CapacityAllocator:
         分配策略（优先级从高到低）:
         1. demand_weights: 外部需求权重
         2. contracts: 根据合同需求
-        3. 多因素综合：需求 + 紧急 + 利润 + 库存
+        3. 多因素综合：需求 + 紧急 + 库存
         4. 平均分配：降级方案
         """
         context = context or {}
@@ -104,7 +103,7 @@ class CapacityAllocator:
             )
         
         # 策略 3: 多因素综合分配
-        if any(k in context for k in ['urgency', 'profit', 'inventory']):
+        if any(k in context for k in ['urgency', 'inventory']):
             return self._allocate_multi_factor(
                 total_cap, warehouse, categories, context
             )
@@ -186,10 +185,9 @@ class CapacityAllocator:
         多因素综合分配
         
         考虑因素:
-        - 需求比例 (40%)
+        - 需求比例 (50%)
         - 紧急程度 (30%)
-        - 利润率 (20%)
-        - 库存水平 (10%)
+        - 库存水平 (20%)
         
         参数:
             total_cap: 总产能
@@ -228,10 +226,7 @@ class CapacityAllocator:
             # 2. 紧急程度
             urgency = context.get('urgency', {}).get(cat, 0.5)
             
-            # 3. 利润率
-            profit = context.get('profit', {}).get(cat, 0.5)
-            
-            # 4. 库存比例（库存越少权重越高）
+            # 3. 库存比例（库存越少权重越高）
             inventory = context.get('inventory', {}).get(cat, 0)
             inventory_score = self._calculate_inventory_score(inventory)
             
@@ -239,7 +234,6 @@ class CapacityAllocator:
             weights[cat] = (
                 self.config.demand_weight * demand +
                 self.config.urgency_weight * urgency +
-                self.config.profit_weight * profit +
                 self.config.inventory_weight * inventory_score
             )
         
@@ -363,7 +357,6 @@ if __name__ == "__main__":
     
     context = {
         'urgency': {'A': 0.9, 'B': 0.5},     # A 更紧急
-        'profit': {'A': 0.7, 'B': 0.8},      # B 利润高
         'inventory': {'A': 200, 'B': 50},    # B 库存紧张
     }
     
@@ -376,7 +369,6 @@ if __name__ == "__main__":
     
     print(f"总产能：350 吨")
     print(f"紧急程度：A=0.9, B=0.5")
-    print(f"利润率：A=0.7, B=0.8")
     print(f"库存：A=200 吨，B=50 吨")
     print(f"分配结果：{result}")
     print(f"A: {result['A']:.1f} 吨，B: {result['B']:.1f} 吨")
