@@ -2,10 +2,10 @@
   "today": 10,
   "shipments": [
     {
-      "warehouse": "W2",
+      "warehouse": "W1",
       "cid": "HT-2026-001",
       "category": "A",
-      "tons": 36.95685
+      "tons": 37.00275
     },
     {
       "warehouse": "W1",
@@ -16,11 +16,11 @@
   ],
   "trucks": [
     {
-      "warehouse": "W2",
+      "warehouse": "W1",
       "cid": "HT-2026-001",
       "trucks": 2,
       "mixing": {
-        "A": 36.95685
+        "A": 37.00275
       }
     },
     {
