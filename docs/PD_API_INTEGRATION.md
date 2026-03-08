@@ -7,7 +7,7 @@
 
 ---
 
-## 📋 目录
+##  目录
 
 - [概述](#概述)
 - [核心接口详解](#核心接口详解)
@@ -381,7 +381,7 @@ if not api.health_check():
     print("PD API 不可用！")
     exit(1)
 
-print("✅ PD API 连接正常")
+print(" PD API 连接正常")
 ```
 
 ### 2. 获取在途报单
@@ -451,9 +451,9 @@ result = api.create_delivery(delivery_data)
 
 if result.get("success"):
     delivery_id = result["data"]["delivery_id"]
-    print(f"✅ 报货单创建成功：{delivery_id}")
+    print(f" 报货单创建成功：{delivery_id}")
 else:
-    print(f"❌ 创建失败：{result.get('error')}")
+    print(f" 创建失败：{result.get('error')}")
 ```
 
 ### 5. 集成到 rolling_optimizer.py
@@ -511,9 +511,9 @@ class RollingOptimizer:
         
         result = self.api.create_delivery(delivery_data)
         if result.get("success"):
-            print(f"✅ 发货计划执行成功：{result['data']['delivery_id']}")
+            print(f" 发货计划执行成功：{result['data']['delivery_id']}")
         else:
-            print(f"❌ 发货计划执行失败：{result.get('error')}")
+            print(f" 发货计划执行失败：{result.get('error')}")
 ```
 
 ---
@@ -616,7 +616,7 @@ PD API 客户端测试
 ============================================================
 
 1. 健康检查
-   ✅ PD API 连接正常
+    PD API 连接正常
 
 2. 获取报货单
    报货单数量：0
@@ -631,7 +631,7 @@ PD API 客户端测试
    今日 (2026-03-08) 无到货记录
 
 ============================================================
-✅ 所有测试通过！
+ 所有测试通过！
 ============================================================
 ```
 
@@ -640,14 +640,14 @@ PD API 客户端测试
 ## 更新日志
 
 ### v2.0 (2026-03-08)
-- ✅ 完整实现所有核心接口
-- ✅ 添加数据格式转换工具
-- ✅ 添加错误处理和重试机制
-- ✅ 完善文档和示例
+-  完整实现所有核心接口
+-  添加数据格式转换工具
+-  添加错误处理和重试机制
+-  完善文档和示例
 
 ### v1.0 (2026-03-08)
-- ✅ 初始版本
-- ✅ 实现基础接口调用
+-  初始版本
+-  实现基础接口调用
 
 ---
 
