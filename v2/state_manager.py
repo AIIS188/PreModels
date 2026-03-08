@@ -86,9 +86,19 @@ class StateManager:
         参数:
             state: 模型状态
         """
+        # 转换为字典，处理 tuple 键
+        state_dict = asdict(state)
+        
+        # 将 tuple 键转换为字符串
+        if state_dict.get('x_prev'):
+            state_dict['x_prev'] = {
+                f"{k[0]}_{k[1]}_{k[2]}_{k[3]}" if isinstance(k, tuple) else k: v
+                for k, v in state_dict['x_prev'].items()
+            }
+        
         # 保存到 state.json
         with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(asdict(state), f, indent=2, ensure_ascii=False)
+            json.dump(state_dict, f, indent=2, ensure_ascii=False)
         
         # 保存到历史快照（按日期）
         if state.last_run_day is not None:
@@ -97,7 +107,7 @@ class StateManager:
                 f"state_day{state.last_run_day}.json"
             )
             with open(history_file, 'w', encoding='utf-8') as f:
-                json.dump(asdict(state), f, indent=2, ensure_ascii=False)
+                json.dump(state_dict, f, indent=2, ensure_ascii=False)
     
     def log(self, message: str, level: str = "INFO"):
         """

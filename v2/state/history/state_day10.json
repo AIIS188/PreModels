@@ -1,67 +1,68 @@
 {
   "delivered_so_far": {
-    "C1": 120.0,
-    "C2": 520.0
+    "HT-2026-001": 0.0,
+    "HT-2026-002": 0.0
   },
   "in_transit_orders": [
     {
-      "order_id": "O1001",
-      "cid": "C1",
-      "receiver": "R1",
+      "order_id": "DL001",
+      "cid": "HT-2026-001",
       "warehouse": "W1",
       "category": "A",
-      "ship_day": 9
+      "ship_day": 9,
+      "weight": 35.0,
+      "truck_id": "京 A12345",
+      "driver_id": "张三",
+      "status": "pending"
     },
     {
-      "order_id": "O1002",
-      "cid": "C1",
-      "receiver": "R1",
+      "order_id": "DL002",
+      "cid": "HT-2026-001",
       "warehouse": "W2",
       "category": "B",
-      "ship_day": 9
+      "ship_day": 9,
+      "weight": 33.0,
+      "truck_id": "京 B23456",
+      "driver_id": "李四",
+      "status": "pending"
     },
     {
-      "order_id": "O2001",
-      "cid": "C2",
-      "receiver": "R2",
+      "order_id": "DL003",
+      "cid": "HT-2026-002",
       "warehouse": "W1",
       "category": "A",
-      "ship_day": 9
-    },
-    {
-      "order_id": "O2002",
-      "cid": "C2",
-      "receiver": "R2",
-      "warehouse": "W1",
-      "category": "A",
-      "ship_day": 9
-    },
-    {
-      "order_id": "O2003",
-      "cid": "C2",
-      "receiver": "R2",
-      "warehouse": "W2",
-      "category": "B",
-      "ship_day": 9
-    },
-    {
-      "order_id": "O2004",
-      "cid": "C2",
-      "receiver": "R2",
-      "warehouse": "W2",
-      "category": "B",
-      "ship_day": 9
-    },
-    {
-      "order_id": "O2005",
-      "cid": "C2",
-      "receiver": "R2",
-      "warehouse": "W3",
-      "category": "A",
-      "ship_day": 9
+      "ship_day": 9,
+      "weight": 36.0,
+      "truck_id": "京 C34567",
+      "driver_id": "王五",
+      "status": "pending"
     }
   ],
-  "x_prev": {},
-  "last_updated": "2026-03-08T03:23:35.624831",
+  "x_prev": {
+    "W1_HT-2026-001_A_11": 36.95685,
+    "W1_HT-2026-001_A_12": 36.95685,
+    "W1_HT-2026-001_A_14": 36.95685,
+    "W1_HT-2026-001_A_15": 36.95685,
+    "W1_HT-2026-001_A_16": 36.95685,
+    "W1_HT-2026-001_A_19": 36.95685,
+    "W1_HT-2026-001_B_17": 25.983279,
+    "W1_HT-2026-002_A_10": 61.026429,
+    "W1_HT-2026-002_A_12": 61.026429,
+    "W1_HT-2026-002_A_13": 61.026429,
+    "W1_HT-2026-002_A_16": 61.026429,
+    "W1_HT-2026-002_A_18": 61.026429,
+    "W1_HT-2026-002_A_19": 61.026429,
+    "W1_HT-2026-002_B_11": 54.0,
+    "W1_HT-2026-002_B_15": 54.0,
+    "W2_HT-2026-001_A_10": 36.95685,
+    "W2_HT-2026-001_A_17": 10.973571,
+    "W2_HT-2026-001_A_18": 36.95685,
+    "W2_HT-2026-001_B_13": 36.95685,
+    "W2_HT-2026-002_A_11": 7.0264286,
+    "W2_HT-2026-002_A_15": 7.0264286,
+    "W2_HT-2026-002_A_17": 61.026429,
+    "W2_HT-2026-002_B_14": 61.026429
+  },
+  "last_updated": "2026-03-08T14:36:04.260087",
   "last_run_day": 10
 }

@@ -1,0 +1,29 @@
+{
+  "test_date": "2026-03-08T14:36:04.260910",
+  "today": 10,
+  "result": {
+    "x_today": {
+      "W1_HT-2026-002_A_10": 61.026429,
+      "W2_HT-2026-001_A_10": 36.95685
+    },
+    "trucks": {
+      "W1_HT-2026-002_10": 2,
+      "W2_HT-2026-001_10": 2
+    },
+    "mixing": {
+      "W1_HT-2026-002_10": {
+        "A": 61.026429
+      },
+      "W2_HT-2026-001_10": {
+        "A": 36.95685
+      }
+    },
+    "arrival_plan": {}
+  },
+  "summary": {
+    "total_shipments": 2,
+    "total_trucks": 2,
+    "total_mixing": 2,
+    "total_arrival_plan": 0
+  }
+}

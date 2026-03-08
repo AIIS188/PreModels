@@ -1,0 +1,24 @@
+[
+  {
+    "cid": "HT-2026-001",
+    "receiver": "R1",
+    "Q": 520.0,
+    "start_day": 60,
+    "end_day": 79,
+    "allowed_categories": [
+      "A",
+      "B"
+    ]
+  },
+  {
+    "cid": "HT-2026-002",
+    "receiver": "R2",
+    "Q": 900.0,
+    "start_day": 64,
+    "end_day": 84,
+    "allowed_categories": [
+      "A",
+      "B"
+    ]
+  }
+]
