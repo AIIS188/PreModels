@@ -29,8 +29,9 @@ from pathlib import Path
 # 添加 v2 目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent / "v2"))
 
-from rolling_optimizer import RollingOptimizer
-from state_manager import StateManager
+from models.rolling_optimizer import RollingOptimizer
+from core.state_manager import StateManager
+from core.date_utils import DateUtils
 
 
 # =========================
@@ -146,16 +147,14 @@ def send_webhook_notification(subject: str, message: str, success: bool, webhook
 # 优化执行
 # =========================
 
-def get_today_day_number() -> int:
+def get_today_date() -> str:
     """
-    获取当前的 day 编号
+    获取当前日期
     
-    计算从 2026-01-01 开始的天数
+    返回:
+        日期字符串 "2026-03-08"
     """
-    base = datetime(2026, 1, 1)
-    today = datetime.now()
-    delta = today - base
-    return delta.days + 1
+    return DateUtils.today()
 
 
 def run_optimization(today: int = None, H: int = 10) -> dict:
@@ -260,7 +259,9 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="每日自动优化")
     parser.add_argument("--today", type=str, default="auto", 
-                       help="今日 (day 编号)，auto=自动计算")
+                       help="今日 (日期字符串，推荐)，auto=自动获取")
+    parser.add_argument("--today-day", type=int, default=None,
+                       help="今日 (day 编号，兼容旧版)")
     parser.add_argument("--H", type=int, default=10, 
                        help="规划窗口（天数）")
     
@@ -268,14 +269,18 @@ def main():
     
     # 计算今日
     if args.today == "auto":
-        today = get_today_day_number()
-        logger.info(f"自动计算今日：Day {today}")
+        today_date = get_today_date()
+        logger.info(f"自动获取今日：{today_date}")
+    elif args.today_day:
+        # 兼容旧版 day 编号
+        today_date = DateUtils.from_day_number(args.today_day)
+        logger.info(f"使用指定 day 编号：Day {args.today_day} → {today_date}")
     else:
-        today = int(args.today)
-        logger.info(f"使用指定今日：Day {today}")
+        today_date = args.today
+        logger.info(f"使用指定日期：{today_date}")
     
-    # 运行优化
-    result = run_optimization(today=today, H=args.H)
+    # 运行优化 (使用日期格式)
+    result = run_optimization(today_date=today_date, H=args.H)
     
     # 保存执行记录
     record_file = LOG_DIR / "optimization_records.json"

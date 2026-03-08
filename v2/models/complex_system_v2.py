@@ -32,18 +32,23 @@ except ImportError as e:
         "缺少依赖 pulp。请先安装：pip install pulp （或在你的运行环境中启用该库）"
     ) from e
 
-from common_utils_v2 import (
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from models.common_utils_v2 import (
     Contract, CapForecast, Delivered, WeightProfile, DelayProfile, InTransitOrders,
     default_global_delay_pmf, get_delay_dist,
     predict_intransit_arrivals_expected, suggest_trucks_from_tons_plan, get_mixing_details,
     calc_purchase_price_per_ton
 )
+from core.date_utils import DateUtils
 
 
 def solve_lp_rolling_H_days(
     warehouses: List[str],
     categories: List[str],
-    today: int,
+    today: int,  # day 编号 (内部使用)
     H: int,
     contracts: List[Contract],
     cap_forecast: CapForecast,

@@ -219,14 +219,22 @@ def check_optimization_state() -> dict:
         with open(state_file, 'r', encoding='utf-8') as f:
             state = json.load(f)
         
+        # 优先使用 last_run_date (新版)
+        last_run_date = state.get('last_run_date')
         last_run_day = state.get('last_run_day')
         last_updated = state.get('last_updated')
         
-        if last_run_day:
+        if last_run_date:
+            return {
+                "status": "ok",
+                "last_run": f"{last_run_date} (Day {last_run_day}) ({last_updated})",
+                "message": "优化模型状态正常"
+            }
+        elif last_run_day:
             return {
                 "status": "ok",
                 "last_run": f"Day {last_run_day} ({last_updated})",
-                "message": "优化模型状态正常"
+                "message": "优化模型状态正常 (旧版)"
             }
         else:
             return {
