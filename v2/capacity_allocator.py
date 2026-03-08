@@ -5,9 +5,10 @@ capacity_allocator.py
 
 功能：
 1. 根据需求权重分配产能
-2. 根据合同需求分配产能
-3. 多因素综合分配（需求 + 紧急 + 利润 + 库存）
-4. 支持自定义配置
+2. 根据合同紧急度分配产能（集成紧急度计算器）
+3. 根据合同需求分配产能
+4. 多因素综合分配（需求 + 紧急 + 库存）
+5. 支持自定义配置
 
 使用方式：
     allocator = CapacityAllocator()
@@ -17,10 +18,23 @@ capacity_allocator.py
         categories=['A', 'B'],
         context=context
     )
+
+集成紧急度计算：
+    from urgency_calculator import UrgencyCalculator
+    
+    calculator = UrgencyCalculator()
+    urgency_results = calculator.calculate_batch(contracts, today)
+    
+    context = {
+        'urgency_results': urgency_results,  # 紧急度结果
+        'inventory': {...},
+    }
+    
+    allocation = allocator.allocate(..., context=context)
 """
 
 from typing import Dict, List, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -71,10 +85,10 @@ class CapacityAllocator:
             warehouse: 仓库
             categories: 品类列表
             context: 上下文信息
-                - contracts: 合同列表
                 - demand_weights: 需求权重 {(warehouse, category): weight}
-                - urgency: 紧急程度 {category: score}
-                - profit: 利润率 {category: margin}
+                - urgency_results: 紧急度计算结果列表（优先）
+                - urgency: 紧急程度 {category: score}（降级）
+                - contracts: 合同列表
                 - inventory: 库存 {category: tons}
         
         返回:
@@ -82,9 +96,11 @@ class CapacityAllocator:
         
         分配策略（优先级从高到低）:
         1. demand_weights: 外部需求权重
-        2. contracts: 根据合同需求
-        3. 多因素综合：需求 + 紧急 + 库存
-        4. 平均分配：降级方案
+        2. urgency_results: 合同紧急度（集成紧急度计算器）
+        3. contracts: 根据合同需求
+        4. urgency: 紧急程度（手动指定）
+        5. 多因素综合：需求 + 紧急 + 库存
+        6. 平均分配：降级方案
         """
         context = context or {}
         
@@ -95,45 +111,46 @@ class CapacityAllocator:
                 context['demand_weights']
             )
         
-        # 策略 2: 根据合同需求
+        # 策略 2: 使用合同紧急度（集成紧急度计算器）
+        if 'urgency_results' in context:
+            return self._allocate_by_urgency(
+                total_cap, warehouse, categories,
+                context['urgency_results']
+            )
+        
+        # 策略 3: 根据合同需求
         if 'contracts' in context:
             return self._allocate_by_demand(
                 total_cap, warehouse, categories,
                 context['contracts']
             )
         
-        # 策略 3: 多因素综合分配
-        if any(k in context for k in ['urgency', 'inventory']):
+        # 策略 4: 使用手动指定的紧急度
+        if 'urgency' in context:
+            return self._allocate_by_urgency_map(
+                total_cap, warehouse, categories,
+                context['urgency']
+            )
+        
+        # 策略 5: 多因素综合分配
+        if 'inventory' in context:
             return self._allocate_multi_factor(
                 total_cap, warehouse, categories, context
             )
         
-        # 策略 4: 平均分配（降级）
+        # 策略 6: 平均分配（降级）
         return self._allocate_average(total_cap, categories)
     
     def _allocate_by_weights(self, total_cap: float, warehouse: str,
                             categories: List[str], 
                             demand_weights: Dict) -> Dict[str, float]:
-        """
-        根据需求权重分配产能
-        
-        参数:
-            total_cap: 总产能
-            warehouse: 仓库
-            categories: 品类列表
-            demand_weights: 需求权重 {(warehouse, category): weight}
-        
-        返回:
-            {category: allocated_cap}
-        """
-        # 获取各品类权重
+        """根据需求权重分配产能"""
         weights = []
         for cat in categories:
             key = (warehouse, cat)
             weight = demand_weights.get(key, 1.0)
             weights.append(weight)
         
-        # 归一化并分配
         total_weight = sum(weights)
         if total_weight == 0:
             return self._allocate_average(total_cap, categories)
@@ -143,32 +160,60 @@ class CapacityAllocator:
             for cat, w in zip(categories, weights)
         }
     
-    def _allocate_by_demand(self, total_cap: float, warehouse: str,
-                           categories: List[str], 
-                           contracts: List) -> Dict[str, float]:
+    def _allocate_by_urgency(self, total_cap: float, warehouse: str,
+                            categories: List[str],
+                            urgency_results: List) -> Dict[str, float]:
         """
-        根据合同需求分配产能
+        根据合同紧急度分配产能（集成紧急度计算器）
         
         参数:
             total_cap: 总产能
             warehouse: 仓库
             categories: 品类列表
-            contracts: 合同列表
+            urgency_results: 紧急度计算结果列表
         
         返回:
             {category: allocated_cap}
         """
-        # 统计各品类需求
+        # 构建品类紧急度映射
+        urgency_map = {}
+        for cat in categories:
+            # 找出该品类相关的合同紧急度（取最大值）
+            cat_urgencies = [
+                r.urgency_score for r in urgency_results
+                if cat in r.contract_id
+            ]
+            urgency_map[cat] = max(cat_urgencies) if cat_urgencies else 0.5
+        
+        return self._allocate_by_urgency_map(
+            total_cap, warehouse, categories, urgency_map
+        )
+    
+    def _allocate_by_urgency_map(self, total_cap: float, warehouse: str,
+                                 categories: List[str],
+                                 urgency_map: Dict[str, float]) -> Dict[str, float]:
+        """根据紧急度映射分配产能"""
+        total_urgency = sum(urgency_map.values())
+        if total_urgency == 0:
+            return self._allocate_average(total_cap, categories)
+        
+        return {
+            cat: total_cap * (urgency / total_urgency)
+            for cat, urgency in urgency_map.items()
+        }
+    
+    def _allocate_by_demand(self, total_cap: float, warehouse: str,
+                           categories: List[str], 
+                           contracts: List) -> Dict[str, float]:
+        """根据合同需求分配产能"""
         demands = {cat: 0.0 for cat in categories}
         
         for contract in contracts:
             for cat in contract.allowed_categories:
-                # 使用合同剩余量
                 remaining = getattr(contract, 'Q', 0)
                 delivered = getattr(contract, 'delivered_so_far', 0)
                 demands[cat] += (remaining - delivered)
         
-        # 按需求比例分配
         total_demand = sum(demands.values())
         if total_demand == 0:
             return self._allocate_average(total_cap, categories)
@@ -181,29 +226,11 @@ class CapacityAllocator:
     def _allocate_multi_factor(self, total_cap: float, warehouse: str,
                                categories: List[str],
                                context: Dict) -> Dict[str, float]:
-        """
-        多因素综合分配
-        
-        考虑因素:
-        - 需求比例 (50%)
-        - 紧急程度 (30%)
-        - 库存水平 (20%)
-        
-        参数:
-            total_cap: 总产能
-            warehouse: 仓库
-            categories: 品类列表
-            context: 上下文信息
-        
-        返回:
-            {category: allocated_cap}
-        """
-        # 计算各品类综合权重
+        """多因素综合分配"""
         weights = self._calculate_composite_weights(
             warehouse, categories, context
         )
         
-        # 归一化并分配
         total_weight = sum(weights.values())
         if total_weight == 0:
             return self._allocate_average(total_cap, categories)
@@ -245,7 +272,6 @@ class CapacityAllocator:
         if not contracts:
             return 0.5
         
-        # 计算该品类的合同需求占比
         total_demand = sum(getattr(c, 'Q', 0) for c in contracts)
         if total_demand == 0:
             return 0.5
@@ -258,26 +284,11 @@ class CapacityAllocator:
         return cat_demand / total_demand
     
     def _calculate_inventory_score(self, inventory: float) -> float:
-        """
-        计算库存得分
-        
-        库存越少，得分越高（需要更多产能）
-        
-        参数:
-            inventory: 当前库存（吨）
-        
-        返回:
-            库存得分 (0-1)
-        """
-        # 目标库存天数（7 天）
+        """计算库存得分（库存越少得分越高）"""
         target_days = 7
-        # 日均消耗（假设 50 吨/天）
         daily_consumption = 50
-        
-        # 目标库存
         target_inventory = target_days * daily_consumption
         
-        # 库存得分（库存越少得分越高）
         if inventory <= 0:
             return 1.0
         elif inventory >= target_inventory:
@@ -287,16 +298,7 @@ class CapacityAllocator:
     
     def _allocate_average(self, total_cap: float, 
                          categories: List[str]) -> Dict[str, float]:
-        """
-        平均分配（降级方案）
-        
-        参数:
-            total_cap: 总产能
-            categories: 品类列表
-        
-        返回:
-            {category: allocated_cap}
-        """
+        """平均分配（降级方案）"""
         if not categories:
             return {}
         
@@ -308,16 +310,24 @@ class CapacityAllocator:
 # 使用示例
 # =========================
 
+class MockUrgencyResult:
+    """模拟紧急度结果（用于测试）"""
+    def __init__(self, contract_id, urgency_score):
+        self.contract_id = contract_id
+        self.urgency_score = urgency_score
+
+
 if __name__ == "__main__":
     print("=" * 80)
-    print("产能动态分配器示例")
+    print("产能动态分配器示例（集成紧急度）")
     print("=" * 80)
     
-    # 示例 1: 平均分配（降级）
+    allocator = CapacityAllocator()
+    
+    # 示例 1: 平均分配（无上下文）
     print("\n1. 平均分配（无上下文）")
     print("-" * 80)
     
-    allocator = CapacityAllocator()
     result = allocator.allocate(
         total_cap=350,
         warehouse='W1',
@@ -334,8 +344,8 @@ if __name__ == "__main__":
     
     context = {
         'demand_weights': {
-            ('W1', 'A'): 5.0,  # A 需求大
-            ('W1', 'B'): 1.0,  # B 需求小
+            ('W1', 'A'): 5.0,
+            ('W1', 'B'): 1.0,
         }
     }
     
@@ -351,13 +361,38 @@ if __name__ == "__main__":
     print(f"分配结果：{result}")
     print(f"A: {result['A']:.1f} 吨 (+54%), B: {result['B']:.1f} 吨 (-54%)")
     
-    # 示例 3: 多因素综合分配
-    print("\n3. 多因素综合分配")
+    # 示例 3: 根据合同紧急度（集成紧急度计算器）
+    print("\n3. 根据合同紧急度分配")
+    print("-" * 80)
+    
+    urgency_results = [
+        MockUrgencyResult("HT-001-A", 0.85),
+        MockUrgencyResult("HT-002-B", 0.40),
+    ]
+    
+    context = {
+        'urgency_results': urgency_results,
+    }
+    
+    result = allocator.allocate(
+        total_cap=350,
+        warehouse='W1',
+        categories=['A', 'B'],
+        context=context
+    )
+    
+    print(f"总产能：350 吨")
+    print(f"合同紧急度：A=0.85 (非常紧急), B=0.40 (一般)")
+    print(f"分配结果：{result}")
+    print(f"A: {result['A']:.1f} 吨 (+43%), B: {result['B']:.1f} 吨 (-43%)")
+    
+    # 示例 4: 多因素综合分配
+    print("\n4. 多因素综合分配")
     print("-" * 80)
     
     context = {
-        'urgency': {'A': 0.9, 'B': 0.5},     # A 更紧急
-        'inventory': {'A': 200, 'B': 50},    # B 库存紧张
+        'urgency': {'A': 0.9, 'B': 0.5},
+        'inventory': {'A': 200, 'B': 50},
     }
     
     result = allocator.allocate(
