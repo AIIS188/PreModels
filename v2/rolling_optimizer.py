@@ -135,50 +135,141 @@ class RollingOptimizer:
         
         已对接 PD API: GET /api/v1/contracts/
         
+        重要说明:
+        - 合同数据必须从 PD API 成功加载
+        - API 失败时，使用缓存的合同数据（上次成功加载的结果）
+        - 如果既无 API 响应也无缓存，则抛出异常终止运行
+        - 不使用硬编码的默认合同（避免数据过期导致错误决策）
+        
         返回:
             合同列表
+        
+        异常:
+            RuntimeError: 当 API 和缓存都不可用时抛出
         """
+        # 尝试从 PD API 加载
         try:
             pd_contracts = self.api.get_contracts(page=1, page_size=100)
             
-            if not pd_contracts:
-                self.state_mgr.log("警告：PD API 未返回合同数据，使用默认合同", "WARNING")
-                return [
-                    Contract(cid="C1", receiver="R1", Q=520.0, start_day=9, end_day=13, allowed_categories={"A", "B"}),
-                    Contract(cid="C2", receiver="R2", Q=900.0, start_day=8, end_day=20, allowed_categories={"A", "B"}),
-                ]
+            if pd_contracts:
+                contracts = self._convert_pd_contracts(pd_contracts)
+                self.state_mgr.log(f"从 PD API 加载 {len(contracts)} 个合同")
+                # 缓存成功加载的合同
+                self._cache_contracts(contracts)
+                return contracts
             
-            contracts = []
-            for pc in pd_contracts:
-                # 从 PD 合同转换为内部 Contract 格式
-                # 提取允许的品类（从产品明细）
-                allowed_categories = set()
-                for prod in pc.products:
-                    allowed_categories.add(prod.get("product_name", ""))
-                
-                # 计算有效期（从日期转换为 day 编号）
-                start_day = self._date_to_day(pc.contract_date)
-                end_day = self._date_to_day(pc.end_date)
-                
-                contracts.append(Contract(
-                    cid=pc.contract_no,
-                    receiver=pc.smelter_company,
-                    Q=pc.total_quantity,
-                    start_day=start_day,
-                    end_day=end_day,
-                    allowed_categories=allowed_categories,
-                ))
-            
-            self.state_mgr.log(f"从 PD API 加载 {len(contracts)} 个合同")
-            return contracts
+            self.state_mgr.log("PD API 未返回合同数据，尝试使用缓存", "WARNING")
             
         except Exception as e:
-            self.state_mgr.log(f"加载合同失败：{e}", "ERROR")
-            # 降级使用默认合同
-            return [
-                Contract(cid="C1", receiver="R1", Q=520.0, start_day=9, end_day=13, allowed_categories={"A", "B"}),
-                Contract(cid="C2", receiver="R2", Q=900.0, start_day=8, end_day=20, allowed_categories={"A", "B"}),
+            self.state_mgr.log(f"PD API 调用失败：{e}", "ERROR")
+        
+        # API 失败时，尝试使用缓存的合同
+        cached_contracts = self._load_cached_contracts()
+        if cached_contracts:
+            self.state_mgr.log(f"使用缓存的合同 {len(cached_contracts)} 个", "WARNING")
+            return cached_contracts
+        
+        # API 和缓存都不可用，抛出异常
+        self.state_mgr.log("无法加载合同数据：API 失败且无缓存，模型无法运行", "ERROR")
+        raise RuntimeError(
+            "合同数据加载失败：PD API 不可用且无缓存数据。"
+            "请先确保 PD 系统中有合同数据，或检查 API 连接。"
+        )
+    
+    def _convert_pd_contracts(self, pd_contracts: List) -> List[Contract]:
+        """
+        将 PD 合同转换为内部 Contract 格式
+        
+        参数:
+            pd_contracts: PD API 返回的合同列表
+        
+        返回:
+            内部 Contract 格式列表
+        """
+        contracts = []
+        for pc in pd_contracts:
+            # 提取允许的品类（从产品明细）
+            allowed_categories = set()
+            for prod in pc.products:
+                allowed_categories.add(prod.get("product_name", ""))
+            
+            # 计算有效期（从日期转换为 day 编号）
+            start_day = self._date_to_day(pc.contract_date)
+            end_day = self._date_to_day(pc.end_date)
+            
+            contracts.append(Contract(
+                cid=pc.contract_no,
+                receiver=pc.smelter_company,
+                Q=pc.total_quantity,
+                start_day=start_day,
+                end_day=end_day,
+                allowed_categories=allowed_categories,
+            ))
+        
+        return contracts
+    
+    def _cache_contracts(self, contracts: List[Contract]):
+        """
+        缓存合同数据到文件（用于 API 失败时的降级）
+        
+        参数:
+            contracts: 要缓存的合同列表
+        """
+        import json
+        cache_file = "./state/contracts_cache.json"
+        
+        try:
+            data = [
+                {
+                    "cid": c.cid,
+                    "receiver": c.receiver,
+                    "Q": c.Q,
+                    "start_day": c.start_day,
+                    "end_day": c.end_day,
+                    "allowed_categories": list(c.allowed_categories),
+                }
+                for c in contracts
             ]
+            
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            self.state_mgr.log(f"合同已缓存到 {cache_file}")
+        except Exception as e:
+            self.state_mgr.log(f"缓存合同失败：{e}", "WARNING")
+    
+    def _load_cached_contracts(self) -> Optional[List[Contract]]:
+        """
+        从缓存文件加载合同数据
+        
+        返回:
+            合同列表，如果缓存不存在则返回 None
+        """
+        import json
+        cache_file = "./state/contracts_cache.json"
+        
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            contracts = [
+                Contract(
+                    cid=item["cid"],
+                    receiver=item["receiver"],
+                    Q=item["Q"],
+                    start_day=item["start_day"],
+                    end_day=item["end_day"],
+                    allowed_categories=set(item["allowed_categories"]),
+                )
+                for item in data
+            ]
+            
+            return contracts
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            self.state_mgr.log(f"加载缓存合同失败：{e}", "WARNING")
+            return None
     
     def _date_to_day(self, date_str: str) -> int:
         """将日期字符串转换为 day 编号（从 2026-01-01 开始）"""
@@ -245,7 +336,7 @@ class RollingOptimizer:
         """
         加载估重画像
         
-        临时配置：以 35 吨为基准，上下浮动
+        临时配置：以 35 吨为基准，上下浮动（32-38 吨范围）
         后续从历史磅单数据学习各线路实际估重分布
         
         返回:
@@ -253,27 +344,24 @@ class RollingOptimizer:
             mu: 期望估重（吨）
             hi: 高估重（吨）
         """
-        # 临时配置：以 35 吨为基准，各线路略有差异
-        # 后续会根据实际历史数据学习调整
-        base_mu = 35.0  # 基准估重
-        base_hi = 35.0  # 基准高估重
-        
+        # 临时配置：35 吨上下浮动，范围 32-38 吨
+        # 不同仓库线路略有差异，模拟真实场景
         return {
-            # W1 仓库线路
-            ("W1", "R1", "A"): (base_mu, base_hi),
-            ("W1", "R1", "B"): (base_mu, base_hi),
-            ("W1", "R2", "A"): (base_mu, base_hi),
-            ("W1", "R2", "B"): (base_mu, base_hi),
-            # W2 仓库线路
-            ("W2", "R1", "A"): (base_mu, base_hi),
-            ("W2", "R1", "B"): (base_mu, base_hi),
-            ("W2", "R2", "A"): (base_mu, base_hi),
-            ("W2", "R2", "B"): (base_mu, base_hi),
-            # W3 仓库线路
-            ("W3", "R1", "A"): (base_mu, base_hi),
-            ("W3", "R1", "B"): (base_mu, base_hi),
-            ("W3", "R2", "A"): (base_mu, base_hi),
-            ("W3", "R2", "B"): (base_mu, base_hi),
+            # W1 仓库线路（35 上下浮动）
+            ("W1", "R1", "A"): (35.0, 37.0),
+            ("W1", "R1", "B"): (34.0, 36.0),
+            ("W1", "R2", "A"): (36.0, 38.0),
+            ("W1", "R2", "B"): (35.0, 37.0),
+            # W2 仓库线路（35 上下浮动）
+            ("W2", "R1", "A"): (33.0, 35.0),
+            ("W2", "R1", "B"): (34.0, 36.0),
+            ("W2", "R2", "A"): (35.0, 37.0),
+            ("W2", "R2", "B"): (33.0, 35.0),
+            # W3 仓库线路（35 上下浮动）
+            ("W3", "R1", "A"): (32.0, 34.0),
+            ("W3", "R1", "B"): (33.0, 35.0),
+            ("W3", "R2", "A"): (34.0, 36.0),
+            ("W3", "R2", "B"): (32.0, 34.0),
         }
     
     def _load_delay_profile(self) -> Dict:
