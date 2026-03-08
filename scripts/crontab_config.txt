@@ -1,0 +1,61 @@
+# PreModels v2 定时任务配置
+# 
+# 使用方法:
+# 1. 编辑 crontab: crontab -e
+# 2. 复制以下内容到 crontab 文件
+# 3. 保存退出
+#
+# 查看 crontab: crontab -l
+# 删除 crontab: crontab -r
+
+# =========================
+# 定时任务配置
+# =========================
+
+# 每日 08:00 运行优化 (工作日)
+0 8 * * 1-5 cd /root/.openclaw/workspace/PreModels/scripts && python3 run_daily_optimization.py --today auto >> /var/log/premodels/daily_optimization.log 2>&1
+
+# 每日 08:00 运行优化 (包含周末)
+# 0 8 * * * cd /root/.openclaw/workspace/PreModels/scripts && python3 run_daily_optimization.py --today auto >> /var/log/premodels/daily_optimization.log 2>&1
+
+# 每 5 分钟检查服务健康状态
+*/5 * * * * cd /root/.openclaw/workspace/PreModels/monitoring && python3 health_check.py >> /var/log/premodels/health_check.log 2>&1
+
+# 每日 20:00 清理旧日志 (保留 30 天)
+0 20 * * * find /var/log/premodels -name "*.log" -mtime +30 -delete
+
+# =========================
+# 日志目录
+# =========================
+# /var/log/premodels/
+#   - daily_optimization.log  # 每日优化日志
+#   - health_check.log        # 健康检查日志
+#   - optimization_records.json # 优化执行记录
+#   - health_state.json       # 健康状态历史
+
+# =========================
+# 监控命令
+# =========================
+
+# 查看定时任务
+crontab -l
+
+# 查看优化日志
+tail -f /var/log/premodels/daily_optimization.log
+
+# 查看健康检查日志
+tail -f /var/log/premodels/health_check.log
+
+# 手动运行优化
+cd /root/.openclaw/workspace/PreModels/scripts && python3 run_daily_optimization.py --today auto
+
+# 手动健康检查
+cd /root/.openclaw/workspace/PreModels/monitoring && python3 health_check.py
+
+# =========================
+# 注意事项
+# =========================
+# 1. 确保 Python3 已安装
+# 2. 确保日志目录存在：mkdir -p /var/log/premodels
+# 3. 确保脚本有执行权限：chmod +x *.py
+# 4. 确保依赖已安装：pip install requests

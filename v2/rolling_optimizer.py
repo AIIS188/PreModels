@@ -216,7 +216,7 @@ class RollingOptimizer:
             contracts: 要缓存的合同列表
         """
         import json
-        cache_file = "./state/contracts_cache.json"
+        cache_file = self.state_mgr.state_dir + "/contracts_cache.json"
         
         try:
             data = [
@@ -246,7 +246,8 @@ class RollingOptimizer:
             合同列表，如果缓存不存在则返回 None
         """
         import json
-        cache_file = "./state/contracts_cache.json"
+        from pathlib import Path
+        cache_file = Path(self.state_mgr.state_dir) / "contracts_cache.json"
         
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
@@ -500,7 +501,9 @@ class RollingOptimizer:
         today: int,
     ):
         """保存今日计划到文件"""
-        plan_file = f"./state/plan_day{today}.json"
+        from pathlib import Path
+        plan_file = Path(self.state_mgr.state_dir) / f"plan_day{today}.json"
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
         
         # 转换为可序列化格式
         plan_data = {

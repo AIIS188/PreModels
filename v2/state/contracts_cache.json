@@ -3,8 +3,8 @@
     "cid": "HT-2026-001",
     "receiver": "R1",
     "Q": 520.0,
-    "start_day": 60,
-    "end_day": 79,
+    "start_day": 10,
+    "end_day": 30,
     "allowed_categories": [
       "A",
       "B"
@@ -14,8 +14,8 @@
     "cid": "HT-2026-002",
     "receiver": "R2",
     "Q": 900.0,
-    "start_day": 64,
-    "end_day": 84,
+    "start_day": 10,
+    "end_day": 40,
     "allowed_categories": [
       "A",
       "B"
