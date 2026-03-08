@@ -15,6 +15,10 @@ from dataclasses import dataclass, asdict
 import json
 import os
 from datetime import datetime
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.date_utils import DateUtils
 
 
 # =========================
@@ -36,8 +40,11 @@ class ModelState:
     # 最后更新时间
     last_updated: str  # ISO 格式时间戳
     
-    # 最后运行日期
-    last_run_day: Optional[int]
+    # 最后运行日期 (日期字符串，推荐)
+    last_run_date: Optional[str]  # "2026-03-10"
+    
+    # 最后运行日期 (day 编号，兼容旧版)
+    last_run_day: Optional[int]  # 70
 
 
 # =========================
@@ -158,7 +165,7 @@ class StateManager:
         delivered_so_far: Dict[str, float],
         in_transit_orders: List[Dict],
         x_prev: Optional[Dict],
-        today: int,
+        today: str,  # 改为日期字符串
     ) -> ModelState:
         """
         更新状态（滚动优化）
@@ -167,20 +174,29 @@ class StateManager:
             delivered_so_far: 更新后的已到货量
             in_transit_orders: 更新后的在途报单
             x_prev: 今日计划（用于明日稳定性优化）
-            today: 今日（day）
+            today: 今日（日期字符串，如 "2026-03-10"）
         
         返回:
             更新后的 ModelState
         """
+        # 兼容 day 编号
+        if isinstance(today, int):
+            today_date = DateUtils.from_day_number(today)
+            today_day = today
+        else:
+            today_date = today
+            today_day = DateUtils.to_day_number(today)
+        
         state = ModelState(
             delivered_so_far=delivered_so_far,
             in_transit_orders=in_transit_orders,
             x_prev=x_prev,
             last_updated=datetime.now().isoformat(),
-            last_run_day=today,
+            last_run_date=today_date,  # 新增：日期字符串
+            last_run_day=today_day,     # 兼容：day 编号
         )
         self.save_state(state)
-        self.log(f"状态更新完成 (day={today})")
+        self.log(f"状态更新完成 (date={today_date}, day={today_day})")
         return state
     
     def get_x_prev_for_day(self, target_day: int) -> Optional[Dict]:

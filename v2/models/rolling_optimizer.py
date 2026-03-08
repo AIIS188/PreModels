@@ -20,10 +20,15 @@ import argparse
 import json
 import sys
 
-from common_utils_v2 import Contract, default_global_delay_pmf
-from complex_system_v2 import solve_lp_rolling_H_days
-from api_client import PDAPIClient, get_confirmed_arrivals, filter_confirmed_arrivals
-from state_manager import StateManager, ModelState
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from models.common_utils_v2 import Contract, default_global_delay_pmf
+from models.complex_system_v2 import solve_lp_rolling_H_days
+from core.api_client import PDAPIClient, get_confirmed_arrivals, filter_confirmed_arrivals
+from core.state_manager import StateManager, ModelState
+from core.date_utils import DateUtils
 
 
 # =========================
@@ -50,18 +55,37 @@ class RollingOptimizer:
         self.state_mgr = StateManager(state_dir)
         self.api = PDAPIClient(api_base_url)
     
-    def run(self, today: int, H: int = 10) -> Dict:
+    def run(self, today: Optional[int] = None, today_date: Optional[str] = None, H: int = 10) -> Dict:
         """
         运行滚动优化
         
         参数:
-            today: 今日（day）
+            today: 今日（day 编号，兼容旧版）
+            today_date: 今日（日期字符串，推荐使用）
             H: 规划窗口（天数）
         
         返回:
             优化结果
+        
+        使用示例:
+            # 推荐：使用日期
+            optimizer.run(today_date="2026-03-10", H=10)
+            
+            # 兼容：使用 day 编号
+            optimizer.run(today=10, H=10)
         """
-        self.state_mgr.log(f"开始滚动优化 (day={today})")
+        # 优先使用 today_date，否则从 today 转换
+        if today_date:
+            date_str = today_date
+        elif today:
+            date_str = DateUtils.from_day_number(today)
+        else:
+            date_str = DateUtils.today()
+        
+        # 转换为 day 编号 (内部逻辑使用)
+        day = DateUtils.to_day_number(date_str)
+        
+        self.state_mgr.log(f"开始滚动优化 (date={date_str}, day={day})")
         
         # 1. 加载状态
         state = self.state_mgr.load_state()
@@ -70,8 +94,8 @@ class RollingOptimizer:
             raise RuntimeError("状态不存在，请先调用 initialize_state()")
         
         # 2. 获取最新磅单（真实到货）
-        today_arrivals = get_confirmed_arrivals(self.api, today)
-        self.state_mgr.log(f"获取今日到货：{today_arrivals}")
+        today_arrivals = get_confirmed_arrivals(self.api, date_str)
+        self.state_mgr.log(f"获取今日 ({date_str}) 到货：{today_arrivals}")
         
         # 3. 更新已到货量和在途列表
         updated_delivered = state.delivered_so_far.copy()
@@ -114,7 +138,7 @@ class RollingOptimizer:
             delivered_so_far=updated_delivered,
             in_transit_orders=updated_in_transit,
             x_prev=x_horizon,  # 保存窗口计划用于明日稳定性
-            today=today,
+            today=date_str,  # 使用日期字符串
         )
         
         self._save_plan(x_today, trucks, mixing, today)
@@ -541,7 +565,8 @@ def main():
     parser.add_argument("--run", action="store_true", help="运行优化")
     parser.add_argument("--status", action="store_true", help="查看状态")
     parser.add_argument("--reset", action="store_true", help="重置状态")
-    parser.add_argument("--today", type=int, default=10, help="今日 (day)")
+    parser.add_argument("--today", type=int, default=None, help="今日 (day 编号，兼容旧版)")
+    parser.add_argument("--today-date", type=str, default=None, help="今日 (日期字符串，推荐)")
     parser.add_argument("--H", type=int, default=10, help="规划窗口 (天)")
     
     args = parser.parse_args()
@@ -549,7 +574,7 @@ def main():
     optimizer = RollingOptimizer()
     
     if args.run:
-        result = optimizer.run(today=args.today, H=args.H)
+        result = optimizer.run(today=args.today, today_date=args.today_date, H=args.H)
         print(json.dumps(result, indent=2, default=str))
     
     elif args.status:
