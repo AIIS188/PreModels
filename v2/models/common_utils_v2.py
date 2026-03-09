@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set, Optional
 import math
+from core.date_utils import DateUtils    #引入日期工具类
 
 # =========================
 # 结构体：合同
@@ -25,8 +26,8 @@ class Contract:
     cid: str                      # 合同ID
     receiver: str                 # 收货方（同一收货方仅1个活跃合同）
     Q: float                      # 合同总量（吨）
-    start_day: int                # 到货有效期开始（按天）
-    end_day: int                  # 到货有效期结束（按天）
+    start_day: str                # 到货有效期开始
+    end_day: str                  # 到货有效期结束
     allowed_categories: Set[str]  # 允许的品类集合（不混装）
 
 
@@ -35,7 +36,7 @@ class Contract:
 # =========================
 
 CapToday = Dict[Tuple[str, str], float]                 # cap_today[(w,k)] = 吨
-CapForecast = Dict[Tuple[str, str, int], float]         # cap_forecast[(w,k,day)] = 吨
+CapForecast = Dict[Tuple[str, str, str], float]         # cap_forecast[(w,k,date)] = 吨
 Delivered = Dict[str, float]                            # delivered_so_far[cid] = 吨
 WeightProfile = Dict[Tuple[str, str, str], Tuple[float, float]]  # (w,receiver,k)->(mu,hi)
 DelayProfile = Dict[Tuple[str, str], Dict[int, float]]          # (w,receiver)->{delta:prob}
@@ -97,24 +98,24 @@ def predict_intransit_arrivals_expected(
     delay_profile: Optional[DelayProfile] = None,
     global_delay_pmf: Optional[Dict[int, float]] = None,
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
-) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
+) -> Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], float]]:
     """
     在途报单 -> 未来各日预计到货（期望/偏重上界），按延迟分布分摊到多个到货日。
     返回：
-      pred_mu[(cid, day)]：期望到货吨
-      pred_hi[(cid, day)]：偏重上界到货吨（用于保守防超发）
+      pred_mu[(cid, date)]：期望到货吨
+      pred_hi[(cid, date)]：偏重上界到货吨（用于保守防超发）
     """
     if global_delay_pmf is None:
         global_delay_pmf = default_global_delay_pmf()
 
     receiver_by_cid, cid_by_receiver = build_cid_receiver_maps(contracts)
 
-    pred_mu: Dict[Tuple[str, int], float] = {}
-    pred_hi: Dict[Tuple[str, int], float] = {}
+    pred_mu: Dict[Tuple[str, str], float] = {}
+    pred_hi: Dict[Tuple[str, str], float] = {}
 
     for o in in_transit_orders:
         w = o["warehouse"]
-        ship_day = int(o["ship_day"])
+        ship_day = str(o["ship_day"])
         k = o.get("category", None)
         receiver = o.get("receiver", None)
         cid = o.get("cid", None)
@@ -131,7 +132,7 @@ def predict_intransit_arrivals_expected(
         dist = get_delay_dist(w, receiver, delay_profile=delay_profile, global_delay_pmf=global_delay_pmf)
 
         for delta, p in dist.items():
-            d = ship_day + int(delta)
+            d = DateUtils.add_days(ship_day, delta)
             pred_mu[(cid, d)] = pred_mu.get((cid, d), 0.0) + mu_o * float(p)
             pred_hi[(cid, d)] = pred_hi.get((cid, d), 0.0) + hi_o * float(p)
 
@@ -140,35 +141,37 @@ def predict_intransit_arrivals_expected(
 
 def intransit_total_expected_in_valid_window(
     cid: str,
-    pred_mu: Dict[Tuple[str, int], float],
-    day_from: int,
-    day_to: int,
+    pred_mu: Dict[Tuple[str, str], float],
+    day_from: str,
+    day_to: str,
 ) -> float:
     """计算合同 cid 在 [day_from, day_to] 的在途期望到货吨数总和"""
     total = 0.0
-    for d in range(day_from, day_to + 1):
+    d = day_from
+    while DateUtils.diff_days(d, day_to) >= 0:
         total += float(pred_mu.get((cid, d), 0.0))
+        d = DateUtils.add_days(d, 1)
     return total
 
 
 def suggest_trucks_from_tons_plan(
-    tons_plan: Dict[Tuple[str, str, str, int], float],
+    tons_plan: Dict[Tuple[str, str, str, str], float],
     contracts: List[Contract],
     weight_profile: WeightProfile,
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
     allow_mixing: bool = True,  # 新增：是否允许混装
-) -> Dict[Tuple[str, str, int], int]:
+) -> Dict[Tuple[str, str, str], int]:
     """
     将吨计划换算为建议车数
     
     参数:
-        tons_plan: {(w, cid, k, t): tons} 吨计划
+        tons_plan: {(w, cid, k, date): tons} 吨计划
         allow_mixing: 是否允许混装（默认 True）
             - True: 同一 (w, cid, t) 的不同品类可以拼车
             - False: 每个品类单独计算车数（旧逻辑，向后兼容）
     
     返回:
-        {(w, cid, t): trucks} 车数建议
+        {(w, cid, date): trucks} 车数建议
     
     混装模式下的额外输出:
         可通过 get_mixing_details 获取每车的品类分配明细
@@ -177,7 +180,7 @@ def suggest_trucks_from_tons_plan(
     
     if not allow_mixing:
         # 旧逻辑：按品类单独计算车数（向后兼容）
-        truck_suggest: Dict[Tuple[str, str, int], int] = {}
+        truck_suggest: Dict[Tuple[str, str, str], int] = {}
         for (w, cid, k, t), tons in tons_plan.items():
             receiver = receiver_by_cid.get(cid, "")
             mu, _hi = get_mu_hi(w, receiver, k, weight_profile, default_mu_hi=default_mu_hi)
@@ -187,8 +190,8 @@ def suggest_trucks_from_tons_plan(
         return truck_suggest
     
     # 新逻辑：支持混装
-    # 1. 按 (w, cid, t) 聚合吨数
-    tons_by_lane: Dict[Tuple[str, str, int], List[Tuple[str, float]]] = {}
+    # 1. 按 (w, cid, date) 聚合吨数
+    tons_by_lane: Dict[Tuple[str, str, str], List[Tuple[str, float]]] = {}
     for (w, cid, k, t), tons in tons_plan.items():
         key = (w, cid, t)
         if key not in tons_by_lane:
@@ -196,44 +199,37 @@ def suggest_trucks_from_tons_plan(
         tons_by_lane[key].append((k, tons))
     
     # 2. 换算车数（按 lane 估重，混装时使用加权平均 mu）
-    truck_suggest: Dict[Tuple[str, str, int], int] = {}
+    truck_suggest: Dict[Tuple[str, str, str], int] = {}
     for (w, cid, t), category_tons in tons_by_lane.items():
         receiver = receiver_by_cid.get(cid, "")
-        
-        # 计算加权平均 mu
+
         total_tons = sum(tons for _, tons in category_tons)
-        if total_tons <= 0:
-            continue
+        mu, _= get_mu_hi(w, receiver, category_tons[0][0], weight_profile, default_mu_hi=default_mu_hi)  # 取第一个品类的 mu 作为基准
+        trucks = int(math.ceil(total_tons / mu)) if mu > 0 else 0 
         
-        weighted_mu = 0.0
-        for k, tons in category_tons:
-            mu_k, _ = get_mu_hi(w, receiver, k, weight_profile, default_mu_hi=default_mu_hi)
-            weighted_mu += mu_k * (tons / total_tons)
-        
-        trucks = int(math.ceil(total_tons / weighted_mu))
         truck_suggest[(w, cid, t)] = trucks
     
     return truck_suggest
 
 
 def get_mixing_details(
-    tons_plan: Dict[Tuple[str, str, str, int], float],
+    tons_plan: Dict[Tuple[str, str, str, str], float],
     contracts: List[Contract],
     weight_profile: WeightProfile,
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
 ) -> Dict[Tuple[str, str, int], Dict[str, float]]:
     """
-    获取混装明细：每车的品类分配建议
+    获取混装明细：各仓库的品类分配建议
     
     返回:
-        {(w, cid, t): {category: tons}} 每车的品类吨数分配
+        {(w, cid, t): {category: tons}} 各仓库的品类吨数分配
     
     注：这是简化版本，实际装车时可能需要更复杂的配载优化
     """
     receiver_by_cid, _ = build_cid_receiver_maps(contracts)
     
     # 按 (w, cid, t) 聚合品类吨数
-    mixing: Dict[Tuple[str, str, int], Dict[str, float]] = {}
+    mixing: Dict[Tuple[str, str, str], Dict[str, float]] = {}
     for (w, cid, k, t), tons in tons_plan.items():
         key = (w, cid, t)
         if key not in mixing:
