@@ -114,9 +114,9 @@ def solve_lp_rolling_H_days(
     max_delta = max(global_delay_pmf.keys()) if global_delay_pmf else 3
     arrival_days_set = set()
     for t in ship_days:
-        for d in range( max_delta + 1):
+        for d in range(max_delta + 1):
             date = DateUtils.add_days(t, d)
-            arrival_days_set.add(d)
+            arrival_days_set.add(date)
     for c in contracts:
         date = c.start_day
         while DateUtils.diff_days(date, c.end_day) >= 0:
@@ -188,11 +188,12 @@ def solve_lp_rolling_H_days(
         cid = c.cid
         delivered = float(delivered_so_far.get(cid, 0.0))
 
-        remain_start = max(today, c.start_day)
-        if remain_start > c.end_day:
+        # 计算剩余有效天数
+        remain_start = today if DateUtils.diff_days(today, c.start_day) > 0 else c.start_day
+        if DateUtils.diff_days(remain_start, c.end_day) > 0:
             continue
 
-        T = c.end_day - remain_start + 1
+        T = DateUtils.diff_days(remain_start, c.end_day) + 1
         if T <= 0:
             continue
 
