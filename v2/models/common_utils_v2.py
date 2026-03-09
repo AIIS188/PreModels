@@ -223,12 +223,12 @@ def get_mixing_details(
     default_mu_hi: Tuple[float, float] = (32.0, 35.0),
 ) -> Dict[Tuple[str, str, int], Dict[str, float]]:
     """
-    获取混装明细：每车的品类分配建议
+    获取混装明细：按收货方分的品类分配建议
     
     返回:
-        {(w, cid, t): {category: tons}} 每车的品类吨数分配
+        {(w, cid, t): {category: tons}} 各收货方的品类吨数分配
     
-    注：这是简化版本，实际装车时可能需要更复杂的配载优化
+    注：这是简化版本，实际装车时可能需要更复杂
     """
     receiver_by_cid, _ = build_cid_receiver_maps(contracts)
     
@@ -261,4 +261,4 @@ def calc_purchase_price_per_ton(
     if invoice_factor <= 0:
         invoice_factor = 1.0
     base_price = float(contract_unit_price) / float(invoice_factor)
-    return base_price * float(invoice_factor) + float(const)
+    return base_price  + float(const)
