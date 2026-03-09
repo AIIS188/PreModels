@@ -111,7 +111,7 @@ class Weighbill:
     warehouse: str         # 仓库
     category: str          # 品类
     weight: float          # 重量（吨）
-    weigh_day: int         # 过磅时间（day）
+    weigh_day: str         # 过磅时间（date, YYYY-MM-DD）
     truck_id: str          # 车牌号
     driver_id: str         # 司机 ID
 
@@ -124,7 +124,7 @@ class Delivery:
     warehouse: str         # 仓库
     category: str          # 品类
     weight: float          # 重量（吨）
-    ship_day: int          # 发货日
+    ship_day: str          # 发货日（date, YYYY-MM-DD）
     truck_id: str          # 车牌号
     driver_id: str         # 司机 ID
     status: str            # 状态：pending/weighed/cancelled
@@ -685,7 +685,7 @@ class PDAPIClient:
             warehouse=pd_wb.warehouse or "UNKNOWN",
             category=pd_wb.product_name,
             weight=pd_wb.net_weight,
-            weigh_day=PDAPIClient._date_to_day(pd_wb.weigh_date),
+            weigh_day=pd_wb.weigh_date or "",  # 直接使用日期字符串
             truck_id=pd_wb.vehicle_no,
             driver_id=pd_wb.payee or "UNKNOWN",
         )
@@ -707,24 +707,11 @@ class PDAPIClient:
             warehouse=pd_d.warehouse or pd_d.target_factory_name,
             category=pd_d.product_name,
             weight=pd_d.quantity,
-            ship_day=PDAPIClient._date_to_day(pd_d.report_date),
+            ship_day=pd_d.report_date or "",  # 直接使用日期字符串
             truck_id=pd_d.vehicle_no,
             driver_id=pd_d.driver_name,
             status=PDAPIClient._convert_status(pd_d.status),
         )
-    
-    @staticmethod
-    def _date_to_day(date_str: str) -> int:
-        """将日期字符串转换为 day 编号（从某个基准日开始的天数）"""
-        if not date_str:
-            return 0
-        try:
-            # 使用 2026-01-01 作为基准日
-            base = datetime(2026, 1, 1)
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            return (dt - base).days + 1
-        except Exception:
-            return 0
     
     @staticmethod
     def _convert_status(pd_status: str) -> str:

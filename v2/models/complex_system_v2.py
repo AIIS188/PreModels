@@ -310,16 +310,20 @@ def solve_lp_rolling_H_days(
     x_today_plan = {k: v for k, v in x_horizon_plan.items() if k[3] == today}
 
     # 到货诊断（有效期内）
-    arrival_plan: Dict[Tuple[str, int], float] = {}
+    arrival_plan: Dict[Tuple[str, str], float] = {}
     for c in contracts:
         cid = c.cid
-        for d in range(max(today, c.start_day), c.end_day + 1):
+        # 从今天和合同开始日期的较大值开始，到合同结束日期
+        start_date = today if DateUtils.diff_days(today, c.start_day) > 0 else c.start_day
+        d = start_date
+        while DateUtils.diff_days(d, c.end_day) <= 0:
             pred = float(pred_mu.get((cid, d), 0.0))
             add_expr = A_new.get((cid, d), None)
             add_val = float(add_expr.value()) if add_expr is not None else 0.0
             total = pred + add_val
             if total > 1e-6:
                 arrival_plan[(cid, d)] = total
+            d = DateUtils.add_days(d, 1)
 
     # 车数建议（今天，支持混装）
     truck_suggest_today = suggest_trucks_from_tons_plan(
