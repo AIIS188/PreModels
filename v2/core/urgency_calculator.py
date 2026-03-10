@@ -98,6 +98,16 @@ class UrgencyCalculator:
         end_day = getattr(contract, 'end_day', 0)
         delivered = getattr(contract, 'delivered_so_far', 0)
         
+        # 日期格式处理（支持 str 和 int）
+        from core.date_utils import DateUtils
+        
+        if isinstance(start_day, str):
+            start_day = DateUtils.to_day_number(start_day)
+        if isinstance(end_day, str):
+            end_day = DateUtils.to_day_number(end_day)
+        if isinstance(today, str):
+            today = DateUtils.to_day_number(today)
+        
         # 计算基础数据
         total_days = end_day - start_day
         remaining_days = max(0, end_day - today)
