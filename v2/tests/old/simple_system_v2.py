@@ -12,12 +12,12 @@ simple_system_v2.py
 2) 用当天 cap_today[w,k] 贪心分配：
    - 合同排序：临期优先（end_day 近优先），缺口大次优先
    - 仓库排序：准时概率高优先，其次 cap 大优先
-   - ✅ 合同只认总重：品类在允许范围内自由分配，总重达标即可
+   -  合同只认总重：品类在允许范围内自由分配，总重达标即可
 
 说明：
 - 不需要求解器（不依赖 pulp）
 - 仅用当天 cap，不考虑未来 cap
-- ✅ 支持混装：同一 (warehouse, cid, day) 的不同品类可以拼车
+-  支持混装：同一 (warehouse, cid, day) 的不同品类可以拼车
 """
 
 from __future__ import annotations

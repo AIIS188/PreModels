@@ -762,16 +762,58 @@ def filter_confirmed_arrivals(
     """
     从在途列表中移除已确认的到货
     
+    逻辑:
+    1. 遍历在途报单，按 contract_no 分组统计预报货吨数
+    2. 用 confirmed 中的实际过磅吨数扣减
+    3. 剩余吨数 > 0 的报单保留，否则移除
+    
     参数:
         in_transit_orders: 在途报单列表
+            格式：[{cid, warehouse, category, weight, ship_day, ...}, ...]
         confirmed: 已确认的到货 {contract_no: tons}
     
     返回:
         更新后的在途列表
     """
-    # 简化处理：保留所有在途
-    # 实际应该根据磅单确认状态来更新在途列表
-    return in_transit_orders.copy()
+    if not in_transit_orders:
+        return []
+    
+    if not confirmed:
+        # 无已确认到货，保留所有在途
+        return in_transit_orders.copy()
+    
+    # 1. 按合同分组统计在途吨数
+    in_transit_by_cid: Dict[str, float] = {}
+    for order in in_transit_orders:
+        cid = order.get("cid", "")
+        if cid:
+            in_transit_by_cid[cid] = in_transit_by_cid.get(cid, 0.0) + float(order.get("weight", 0.0))
+    
+    # 2. 计算剩余在途吨数
+    remaining_by_cid: Dict[str, float] = {}
+    for cid, in_transit_tons in in_transit_by_cid.items():
+        confirmed_tons = confirmed.get(cid, 0.0)
+        remaining = in_transit_tons - confirmed_tons
+        if remaining > 0:
+            remaining_by_cid[cid] = remaining
+    
+    # 3. 过滤在途列表：只保留还有剩余吨数的合同
+    updated_orders = []
+    for order in in_transit_orders:
+        cid = order.get("cid", "")
+        if cid in remaining_by_cid:
+            # 按比例扣减该报单的吨数
+            original_weight = float(order.get("weight", 0.0))
+            total_in_transit = in_transit_by_cid.get(cid, 0.0)
+            if total_in_transit > 0:
+                # 按原报单吨数占总在途的比例分配剩余吨数
+                ratio = original_weight / total_in_transit
+                new_weight = remaining_by_cid[cid] * ratio
+                updated_order = order.copy()
+                updated_order["weight"] = new_weight
+                updated_orders.append(updated_order)
+    
+    return updated_orders
 
 
 # =========================

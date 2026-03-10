@@ -184,7 +184,7 @@ contract.allowed_categories  # {"动力煤", "焦煤"}
 
 1. ✅ 已完成：核心模型更新
 2. ✅ 已完成：测试验证通过
-3. ⏳ 可选：更新其他使用 Contract 的模块
+3. ✅ 已完成：filter_confirmed_arrivals 实现在途更新
 4. ⏳ 生产环境验证（对接真实 PD API）
 
 ---
