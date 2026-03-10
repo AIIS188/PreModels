@@ -23,12 +23,33 @@ from core.date_utils import DateUtils    #引入日期工具类
 
 @dataclass(frozen=True)
 class Contract:
-    cid: str                      # 合同ID
-    receiver: str                 # 收货方（同一收货方仅1个活跃合同）
+    cid: str                      # 合同 ID
+    receiver: str                 # 收货方（同一收货方仅 1 个活跃合同）
     Q: float                      # 合同总量（吨）
     start_day: str                # 到货有效期开始
     end_day: str                  # 到货有效期结束
-    allowed_categories: Set[str]  # 允许的品类集合（不混装）
+    products: List[Dict]          # 品类明细（价格锁定）[{product_name, unit_price}]
+                                  # 例：[{"product_name": "动力煤", "unit_price": 800.0}]
+                                  # 一个合同可包含多个品类，合同期内价格不可调整
+    
+    @property
+    def allowed_categories(self) -> Set[str]:
+        """向后兼容：从 products 提取品类名称集合"""
+        return {p["product_name"] for p in self.products}
+    
+    def get_unit_price(self, product_name: str) -> Optional[float]:
+        """获取指定品类的合同单价（元/吨）"""
+        for p in self.products:
+            if p.get("product_name") == product_name:
+                return float(p.get("unit_price", 0.0))
+        return None
+    
+    def get_base_price(self, product_name: str, invoice_factor: float = 1.048) -> Optional[float]:
+        """获取指定品类的基础价（不含票）"""
+        unit_price = self.get_unit_price(product_name)
+        if unit_price is None:
+            return None
+        return unit_price / invoice_factor
 
 
 # =========================

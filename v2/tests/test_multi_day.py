@@ -42,7 +42,7 @@ def reset_state():
             "Q": 520.0,
             "start_day": 60,  # 2026-03-01
             "end_day": 79,    # 2026-03-20
-            "allowed_categories": ["A", "B"],
+            "products": [{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}],
         },
         {
             "cid": "HT-2026-002",
@@ -50,7 +50,7 @@ def reset_state():
             "Q": 900.0,
             "start_day": 64,  # 2026-03-05
             "end_day": 84,    # 2026-03-25
-            "allowed_categories": ["A", "B"],
+            "products": [{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}],
         },
     ]
     

@@ -212,14 +212,12 @@ class RollingOptimizer:
         """
         contracts = []
         for pc in pd_contracts:
-            # 提取允许的品类（从产品明细）
-            allowed_categories = set()
-            for prod in pc.products:
-                allowed_categories.add(prod.get("product_name", ""))
+            # 品类明细（价格锁定）
+            products = pc.products if pc.products else []
             
-            # 计算有效期（从日期转换为 day 编号）
-            start_day = self._date_to_day(pc.contract_date)
-            end_day = self._date_to_day(pc.end_date)
+            # 计算有效期（日期字符串格式）
+            start_day = pc.contract_date
+            end_day = pc.end_date
             
             contracts.append(Contract(
                 cid=pc.contract_no,
@@ -227,7 +225,7 @@ class RollingOptimizer:
                 Q=pc.total_quantity,
                 start_day=start_day,
                 end_day=end_day,
-                allowed_categories=allowed_categories,
+                products=products,
             ))
         
         return contracts
@@ -250,7 +248,7 @@ class RollingOptimizer:
                     "Q": c.Q,
                     "start_day": c.start_day,
                     "end_day": c.end_day,
-                    "allowed_categories": list(c.allowed_categories),
+                    "products": c.products,
                 }
                 for c in contracts
             ]
@@ -284,7 +282,7 @@ class RollingOptimizer:
                     Q=item["Q"],
                     start_day=item["start_day"],
                     end_day=item["end_day"],
-                    allowed_categories=set(item["allowed_categories"]),
+                    products=item["products"],
                 )
                 for item in data
             ]

@@ -33,7 +33,7 @@ def test_contract_with_date():
         Q=1000.0,
         start_day="2026-03-10",
         end_day="2026-03-20",
-        allowed_categories={"A", "B"}
+        products=[{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}]
     )
     
     print(f"合同 ID: {contract.cid}")
@@ -67,7 +67,7 @@ def test_intransit_with_date():
             Q=1000.0,
             start_day="2026-03-10",
             end_day="2026-03-20",
-            allowed_categories={"A"}
+            products=[{"product_name": "A", "unit_price": 800.0}]
         )
     ]
     
@@ -122,7 +122,7 @@ def test_truck_suggest_with_date():
             Q=1000.0,
             start_day="2026-03-10",
             end_day="2026-03-20",
-            allowed_categories={"A"}
+            products=[{"product_name": "A", "unit_price": 800.0}]
         )
     ]
     
@@ -171,7 +171,7 @@ def test_rolling_optimizer_with_date():
             Q=1000.0,
             start_day="2026-03-10",
             end_day="2026-03-20",
-            allowed_categories={"A", "B"}
+            products=[{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}]
         )
     ]
     
