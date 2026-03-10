@@ -51,7 +51,7 @@ def test_contract_with_date():
     print(f"合同期限：{days} 天")
     assert days == 10, "合同期限计算错误"
     
-    print("✅ Contract 日期格式测试通过\n")
+    print("OK: Contract 日期格式测试通过\n")
 
 
 def test_intransit_with_date():
@@ -106,7 +106,7 @@ def test_intransit_with_date():
     )
     print(f"\n有效期内 (2026-03-10 至 2026-03-20) 在途总量：{total:.2f} 吨")
     
-    print("✅ 在途预测日期格式测试通过\n")
+    print("OK: 在途预测日期格式测试通过\n")
 
 
 def test_truck_suggest_with_date():
@@ -150,7 +150,7 @@ def test_truck_suggest_with_date():
         assert len(date) == 10, f"日期格式错误：{date}"
         assert date.count('-') == 2, f"日期格式错误：{date}"
     
-    print("✅ 车数建议日期格式测试通过\n")
+    print("OK: 车数建议日期格式测试通过\n")
 
 
 def test_rolling_optimizer_with_date():
@@ -234,10 +234,10 @@ def test_rolling_optimizer_with_date():
             print(f"  示例到货：{cid} 在 {date}: {tons:.2f} 吨")
             assert len(date) == 10, f"日期格式错误：{date}"
         
-        print("\n✅ 滚动优化器日期格式测试通过\n")
+        print("\nOK: 滚动优化器日期格式测试通过\n")
         
     except Exception as e:
-        print(f"❌ 滚动优化器测试失败：{e}")
+        print(f"FAIL: 滚动优化器测试失败：{e}")
         import traceback
         traceback.print_exc()
         raise
@@ -255,9 +255,9 @@ def main():
     test_rolling_optimizer_with_date()
     
     print("=" * 60)
-    print("🎉 所有测试通过！日期格式重构完成！")
+    print("SUCCESS: 所有测试通过！日期格式重构完成！")
     print("=" * 60)
-    print("\n✅ 修改总结:")
+    print("\nOK: 修改总结:")
     print("  1. Contract.start_day/end_day: int -> str (YYYY-MM-DD)")
     print("  2. CapForecast: (w,k,day) -> (w,k,date)")
     print("  3. 所有日期运算：使用 DateUtils.add_days/diff_days")

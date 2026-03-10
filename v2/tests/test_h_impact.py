@@ -15,9 +15,9 @@ from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
-
-from rolling_optimizer import RollingOptimizer
-from state_manager import StateManager
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from models.rolling_optimizer import RollingOptimizer
+from core.state_manager import StateManager
 
 
 def reset_state():

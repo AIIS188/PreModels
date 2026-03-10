@@ -20,10 +20,10 @@ import random
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from rolling_optimizer import RollingOptimizer
-from state_manager import StateManager
+from models.rolling_optimizer import RollingOptimizer
+from core.state_manager import StateManager
 import shutil
 
 
@@ -40,16 +40,16 @@ def reset_state():
             "cid": "HT-2026-001",
             "receiver": "R1",
             "Q": 520.0,
-            "start_day": 60,  # 2026-03-01
-            "end_day": 79,    # 2026-03-20
+            "start_day": "2026-03-01",
+            "end_day": "2026-03-20",
             "products": [{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}],
         },
         {
             "cid": "HT-2026-002",
             "receiver": "R2",
             "Q": 900.0,
-            "start_day": 64,  # 2026-03-05
-            "end_day": 84,    # 2026-03-25
+            "start_day": "2026-03-05",
+            "end_day": "2026-03-25",
             "products": [{"product_name": "A", "unit_price": 800.0}, {"product_name": "B", "unit_price": 1200.0}],
         },
     ]
@@ -88,9 +88,10 @@ def simulate_weighbills(today, in_transit):
     return confirmed
 
 
-def initialize_first_state(today=10):
+def initialize_first_state(today_date="2026-03-10"):
     """初始化首日状态"""
-    from common_utils_v2 import Contract
+    from models.common_utils_v2 import Contract
+    from core.date_utils import DateUtils
     
     state_mgr = StateManager("./state")
     
@@ -100,14 +101,15 @@ def initialize_first_state(today=10):
         "HT-2026-002": 0.0,
     }
     
-    # 初始在途报单
+    # 初始在途报单（使用日期字符串）
+    yesterday = DateUtils.add_days(today_date, -1)
     in_transit_orders = [
         {
             "order_id": "DL001",
             "cid": "HT-2026-001",
             "warehouse": "W1",
             "category": "A",
-            "ship_day": today - 1,
+            "ship_day": yesterday,
             "weight": 35.0,
             "truck_id": "京 A12345",
             "driver_id": "张三",
@@ -118,7 +120,7 @@ def initialize_first_state(today=10):
             "cid": "HT-2026-001",
             "warehouse": "W2",
             "category": "B",
-            "ship_day": today - 1,
+            "ship_day": yesterday,
             "weight": 33.0,
             "truck_id": "京 B23456",
             "driver_id": "李四",
@@ -129,7 +131,7 @@ def initialize_first_state(today=10):
             "cid": "HT-2026-002",
             "warehouse": "W1",
             "category": "A",
-            "ship_day": today - 1,
+            "ship_day": yesterday,
             "weight": 36.0,
             "truck_id": "京 C34567",
             "driver_id": "王五",
@@ -141,23 +143,25 @@ def initialize_first_state(today=10):
         delivered_so_far=delivered_so_far,
         in_transit_orders=in_transit_orders,
         x_prev={},
-        today=today - 1,
+        today=today_date,
     )
     
-    print(f"状态已初始化（today={today}）\n")
+    print(f"状态已初始化（date={today_date}）\n")
 
 
-def run_multi_day_test(start_day=10, num_days=5):
+def run_multi_day_test(start_date="2026-03-10", num_days=3):
     """
     运行多日测试
     
     参数:
-        start_day: 起始日
+        start_date: 起始日期 (YYYY-MM-DD)
         num_days: 运行天数
     """
+    from core.date_utils import DateUtils
+    
     print("=" * 80)
     print("PreModels v2 多日连续运行测试")
-    print(f"起始日：Day {start_day}")
+    print(f"起始日期：{start_date}")
     print(f"运行天数：{num_days} 天")
     print("=" * 80)
     
@@ -165,7 +169,7 @@ def run_multi_day_test(start_day=10, num_days=5):
     reset_state()
     
     # 初始化首日状态
-    initialize_first_state(start_day)
+    initialize_first_state(start_date)
     
     # 初始化优化器
     optimizer = RollingOptimizer(
@@ -178,16 +182,16 @@ def run_multi_day_test(start_day=10, num_days=5):
     contract_progress = {}
     
     for day_offset in range(num_days):
-        today = start_day + day_offset
+        today = DateUtils.add_days(start_date, day_offset)
         
         print(f"\n{'=' * 80}")
-        print(f"第 {day_offset + 1} 天：Day {today}")
+        print(f"第 {day_offset + 1} 天：{today}")
         print(f"{'=' * 80}")
         
         try:
             # 运行优化
             print(f"\n运行优化...")
-            result = optimizer.run(today=today, H=10)
+            result = optimizer.run(today_date=today, H=5)
             
             # 统计今日计划
             shipments = result.get('x_today', {})
@@ -253,11 +257,11 @@ def run_multi_day_test(start_day=10, num_days=5):
     print(f"平均载重：{total_tons_all/total_trucks_all:.1f} 吨/车" if total_trucks_all > 0 else "")
     
     print(f"\n每日发货统计:")
-    print(f"{'日期':<8} {'计划数':>8} {'吨数':>12} {'车数':>8} {'平均载重':>10}")
+    print(f"{'日期':<12} {'计划数':>8} {'吨数':>12} {'车数':>8} {'平均载重':>10}")
     print("-" * 80)
     for r in daily_results:
         avg_load = r['total_tons'] / r['total_trucks'] if r['total_trucks'] > 0 else 0
-        print(f"Day {r['day']:<5} {r['shipments']:>8} {r['total_tons']:>12.2f} {r['total_trucks']:>8} {avg_load:>10.1f}")
+        print(f"{r['day']:<12} {r['shipments']:>8} {r['total_tons']:>12.2f} {r['total_trucks']:>8} {avg_load:>10.1f}")
     
     print(f"\n合同累计完成:")
     for cid, total in sorted(contract_progress.items()):
@@ -268,7 +272,7 @@ def run_multi_day_test(start_day=10, num_days=5):
     with open(summary_file, 'w', encoding='utf-8') as f:
         json.dump({
             'test_date': datetime.now().isoformat(),
-            'start_day': start_day,
+            'start_date': start_date,
             'num_days': num_days,
             'daily_results': daily_results,
             'contract_progress': contract_progress,
@@ -289,8 +293,8 @@ def run_multi_day_test(start_day=10, num_days=5):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="多日连续运行测试")
-    parser.add_argument("--start-day", type=int, default=10, help="起始日")
-    parser.add_argument("--days", type=int, default=5, help="运行天数")
+    parser.add_argument("--start-date", type=str, default="2026-03-10", help="起始日期 (YYYY-MM-DD)")
+    parser.add_argument("--days", type=int, default=3, help="运行天数")
     args = parser.parse_args()
     
-    run_multi_day_test(start_day=args.start_day, num_days=args.days)
+    run_multi_day_test(start_date=args.start_date, num_days=args.days)

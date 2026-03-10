@@ -13,7 +13,10 @@ test_pd_api.py
 
 import sys
 import json
-from api_client import PDAPIClient, get_confirmed_arrivals
+import os 
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.api_client import PDAPIClient, get_confirmed_arrivals
 
 
 def test_health_check(api: PDAPIClient):
@@ -23,10 +26,10 @@ def test_health_check(api: PDAPIClient):
     print("=" * 60)
     
     if api.health_check():
-        print("✅ PD API 连接正常")
+        print("OK: PD API 连接正常")
         return True
     else:
-        print("❌ PD API 连接失败")
+        print("FAIL: PD API 连接失败")
         return False
 
 
@@ -136,7 +139,7 @@ def main():
             result = test(api)
             results.append(result)
         except Exception as e:
-            print(f"\n❌ 测试失败：{e}")
+            print(f"\nFAIL: 测试失败：{e}")
             results.append(False)
     
     # 总结
@@ -148,10 +151,10 @@ def main():
     print(f"通过：{passed}/{total}")
     
     if passed == total:
-        print("\n✅ 所有测试通过！PD API 对接成功！")
+        print("\nOK: 所有测试通过！PD API 对接成功！")
         return 0
     else:
-        print(f"\n⚠️  {total - passed} 个测试失败")
+        print(f"\nWARNING:  {total - passed} 个测试失败")
         return 1
 
 

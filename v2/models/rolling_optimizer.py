@@ -561,7 +561,7 @@ def main():
     optimizer = RollingOptimizer()
     
     if args.run:
-        result = optimizer.run(today=args.today, today_date=args.today_date, H=args.H)
+        result = optimizer.run(today_date=args.today_date, H=args.H)
         print(json.dumps(result, indent=2, default=str))
     
     elif args.status:
