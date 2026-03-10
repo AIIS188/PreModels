@@ -755,22 +755,48 @@ def get_confirmed_arrivals(
     return arrivals
 
 
+def get_weighed_truck_ids(
+    api: PDAPIClient,
+    today: str,
+    cid: Optional[str] = None,
+) -> Set[str]:
+    """
+    获取今日已过磅的车牌号集合
+    
+    参数:
+        api: API 客户端
+        today: 今日日期 (YYYY-MM-DD)
+        cid: 合同编号，None=全部
+    
+    返回:
+        {truck_id, ...} 已过磅的车牌号集合
+    """
+    weighbills = api.get_weighbills_today(today=today, cid=cid)
+    
+    truck_ids: Set[str] = set()
+    for wb in weighbills:
+        truck_id = wb.vehicle_no or wb.contract_no  # 用车牌号或合同号作为标识
+        truck_ids.add(truck_id)
+    
+    return truck_ids
+
+
 def filter_confirmed_arrivals(
     in_transit_orders: List[Dict],
-    confirmed: Dict[str, float],
+    weighed_truck_ids: Set[str],
 ) -> List[Dict]:
     """
-    从在途列表中移除已确认的到货
+    从在途列表中移除已过磅的报单
     
     逻辑:
-    1. 遍历在途报单，按 contract_no 分组统计预报货吨数
-    2. 用 confirmed 中的实际过磅吨数扣减
-    3. 剩余吨数 > 0 的报单保留，否则移除
+    1. 一个报单可对应多个磅单，但车牌号唯一
+    2. 如果报单的车牌号已出现在磅单中，说明该报单已过磅，从在途删除
+    3. 否则保留在途
     
     参数:
         in_transit_orders: 在途报单列表
-            格式：[{cid, warehouse, category, weight, ship_day, ...}, ...]
-        confirmed: 已确认的到货 {contract_no: tons}
+            格式：[{order_id, cid, warehouse, category, weight, ship_day, truck_id, ...}, ...]
+        weighed_truck_ids: 已过磅的车牌号集合 {truck_id, ...}
     
     返回:
         更新后的在途列表
@@ -778,40 +804,18 @@ def filter_confirmed_arrivals(
     if not in_transit_orders:
         return []
     
-    if not confirmed:
-        # 无已确认到货，保留所有在途
+    if not weighed_truck_ids:
+        # 无已磅单车牌，保留所有在途
         return in_transit_orders.copy()
     
-    # 1. 按合同分组统计在途吨数
-    in_transit_by_cid: Dict[str, float] = {}
-    for order in in_transit_orders:
-        cid = order.get("cid", "")
-        if cid:
-            in_transit_by_cid[cid] = in_transit_by_cid.get(cid, 0.0) + float(order.get("weight", 0.0))
-    
-    # 2. 计算剩余在途吨数
-    remaining_by_cid: Dict[str, float] = {}
-    for cid, in_transit_tons in in_transit_by_cid.items():
-        confirmed_tons = confirmed.get(cid, 0.0)
-        remaining = in_transit_tons - confirmed_tons
-        if remaining > 0:
-            remaining_by_cid[cid] = remaining
-    
-    # 3. 过滤在途列表：只保留还有剩余吨数的合同
+    # 过滤：只保留车牌号不在磅单中的报单
     updated_orders = []
     for order in in_transit_orders:
-        cid = order.get("cid", "")
-        if cid in remaining_by_cid:
-            # 按比例扣减该报单的吨数
-            original_weight = float(order.get("weight", 0.0))
-            total_in_transit = in_transit_by_cid.get(cid, 0.0)
-            if total_in_transit > 0:
-                # 按原报单吨数占总在途的比例分配剩余吨数
-                ratio = original_weight / total_in_transit
-                new_weight = remaining_by_cid[cid] * ratio
-                updated_order = order.copy()
-                updated_order["weight"] = new_weight
-                updated_orders.append(updated_order)
+        truck_id = order.get("truck_id", "")
+        if truck_id and truck_id in weighed_truck_ids:
+            # 该报单对应的车辆已过磅，从在途删除
+            continue
+        updated_orders.append(order.copy())
     
     return updated_orders
 

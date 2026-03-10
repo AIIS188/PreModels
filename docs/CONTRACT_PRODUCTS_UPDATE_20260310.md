@@ -180,11 +180,61 @@ contract.allowed_categories  # {"动力煤", "焦煤"}
 
 ---
 
+## 📝 附录：在途更新逻辑重构（2026-03-10 15:00）
+
+### 问题发现
+
+初始实现使用 `contract_no + 吨数` 匹配在途和磅单，但实际业务逻辑是：
+- 报单上传后录入在途
+- 磅单上传后从在途删除
+- 一个报单可对应多个磅单
+- **车牌号是唯一标识**
+
+### 重构方案
+
+**修改前**:
+```python
+def filter_confirmed_arrivals(in_transit_orders, confirmed: Dict[str, float]):
+    # 按合同吨数匹配 ❌
+```
+
+**修改后**:
+```python
+def filter_confirmed_arrivals(in_transit_orders, weighed_truck_ids: Set[str]):
+    """
+    从在途列表中移除已过磅的报单
+    
+    逻辑:
+    1. 一个报单可对应多个磅单，但车牌号唯一
+    2. 如果报单的车牌号已出现在磅单中，说明该报单已过磅，从在途删除
+    3. 否则保留在途
+    """
+```
+
+### 新增函数
+
+```python
+def get_weighed_truck_ids(api, today, cid=None) -> Set[str]:
+    """获取今日已过磅的车牌号集合"""
+```
+
+### 使用流程
+
+```python
+# 1. 获取今日已过磅的车牌
+weighed_trucks = get_weighed_truck_ids(api, "2026-03-10")
+
+# 2. 从在途删除已过磅的报单
+updated_in_transit = filter_confirmed_arrivals(in_transit, weighed_trucks)
+```
+
+---
+
 ## 🚀 下一步
 
 1. ✅ 已完成：核心模型更新
 2. ✅ 已完成：测试验证通过
-3. ✅ 已完成：filter_confirmed_arrivals 实现在途更新
+3. ✅ 已完成：filter_confirmed_arrivals 实现在途更新（车牌号匹配）
 4. ⏳ 生产环境验证（对接真实 PD API）
 
 ---

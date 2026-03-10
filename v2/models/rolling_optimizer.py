@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models.common_utils_v2 import Contract, default_global_delay_pmf
 from models.complex_system_v2 import solve_lp_rolling_H_days
-from core.api_client import PDAPIClient, get_confirmed_arrivals, filter_confirmed_arrivals
+from core.api_client import PDAPIClient, get_confirmed_arrivals, get_weighed_truck_ids, filter_confirmed_arrivals
 from core.state_manager import StateManager, ModelState
 from core.date_utils import DateUtils
 
@@ -102,9 +102,14 @@ class RollingOptimizer:
         for cid, tons in today_arrivals.items():
             updated_delivered[cid] = updated_delivered.get(cid, 0.0) + tons
         
+        # 获取今日已过磅的车牌号集合
+        weighed_trucks = get_weighed_truck_ids(self.api, date_str)
+        self.state_mgr.log(f"今日已过磅车辆：{len(weighed_trucks)} 辆")
+        
+        # 从在途列表中移除已过磅的报单
         updated_in_transit = filter_confirmed_arrivals(
             state.in_transit_orders,
-            today_arrivals,
+            weighed_trucks,
         )
         self.state_mgr.log(f"更新后在途：{len(updated_in_transit)} 单")
         
