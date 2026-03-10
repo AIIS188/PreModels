@@ -138,6 +138,7 @@ class StateManager:
         self,
         delivered_so_far: Dict[str, float],
         in_transit_orders: List[Dict],
+        today: Optional[str] = None,
     ) -> ModelState:
         """
         初始化状态（首次运行）
@@ -145,19 +146,27 @@ class StateManager:
         参数:
             delivered_so_far: 已到货量
             in_transit_orders: 在途报单
+            today: 今日日期（可选，默认今天）
         
         返回:
             初始化的 ModelState
         """
+        from core.date_utils import DateUtils
+        
+        if today is None:
+            today = DateUtils.today()
+        today_day = DateUtils.to_day_number(today)
+        
         state = ModelState(
             delivered_so_far=delivered_so_far,
             in_transit_orders=in_transit_orders,
             x_prev=None,
             last_updated=datetime.now().isoformat(),
-            last_run_day=None,
+            last_run_date=today,
+            last_run_day=today_day,
         )
         self.save_state(state)
-        self.log("状态初始化完成")
+        self.log(f"状态初始化完成 (date={today})")
         return state
     
     def update_state(

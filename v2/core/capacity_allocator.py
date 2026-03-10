@@ -56,7 +56,7 @@ class AllocationConfig:
 class AllocationResult:
     """分配结果"""
     warehouse: str
-    day: int
+    day: str
     total_capacity: float
     allocation: Dict[str, float]
     strategy: str  # 使用的分配策略

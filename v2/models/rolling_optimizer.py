@@ -55,13 +55,12 @@ class RollingOptimizer:
         self.state_mgr = StateManager(state_dir)
         self.api = PDAPIClient(api_base_url)
     
-    def run(self, today: Optional[int] = None, today_date: Optional[str] = None, H: int = 10) -> Dict:
+    def run(self, today_date: Optional[str] = None, H: int = 10) -> Dict:
         """
         运行滚动优化
         
         参数:
-            today: 今日（day 编号，兼容旧版）
-            today_date: 今日（日期字符串，推荐使用）
+            today_date: 今日（日期字符串）
             H: 规划窗口（天数）
         
         返回:
@@ -71,14 +70,10 @@ class RollingOptimizer:
             # 推荐：使用日期
             optimizer.run(today_date="2026-03-10", H=10)
             
-            # 兼容：使用 day 编号
-            optimizer.run(today=10, H=10)
         """
-        # 优先使用 today_date，否则从 today 转换
+
         if today_date:
             date_str = today_date
-        elif today:
-            date_str = DateUtils.from_day_number(today)
         else:
             date_str = DateUtils.today()
         
@@ -115,15 +110,15 @@ class RollingOptimizer:
         
         # 4. 准备模型输入
         contracts = self._load_contracts()
-        cap_forecast = self._load_cap_forecast(today, H)
+        cap_forecast = self._load_cap_forecast(day, H)
         weight_profile = self._load_weight_profile()
         delay_profile = self._load_delay_profile()
         
-        # 5. 重新运行模型
+        # 5. 重新运行模型（注意：solve_lp_rolling_H_days 使用日期字符串）
         result = solve_lp_rolling_H_days(
             warehouses=list(set(o["warehouse"] for o in updated_in_transit)),
             categories=list(set(o["category"] for o in updated_in_transit)),
-            today=today,
+            today=date_str,  # 使用日期字符串
             H=H,
             contracts=contracts,
             cap_forecast=cap_forecast,
@@ -146,7 +141,7 @@ class RollingOptimizer:
             today=date_str,  # 使用日期字符串
         )
         
-        self._save_plan(x_today, trucks, mixing, today)
+        self._save_plan(x_today, trucks, mixing, day)
         
         self.state_mgr.log(f"优化完成，今日计划：{len(x_today)} 条记录")
         
@@ -299,19 +294,9 @@ class RollingOptimizer:
             self.state_mgr.log(f"加载缓存合同失败：{e}", "WARNING")
             return None
     
-    def _date_to_day(self, date_str: str) -> int:
-        """将日期字符串转换为 day 编号（从 2026-01-01 开始）"""
-        from datetime import datetime
-        if not date_str:
-            return 0
-        try:
-            base = datetime(2026, 1, 1)
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            return (dt - base).days + 1
-        except Exception:
-            return 0
+
     
-    def _load_cap_forecast(self, today: int, H: int) -> Dict:
+    def _load_cap_forecast(self, today: str, H: int) -> Dict:
         """
         加载产能预测/仓库发货能力评估
         
@@ -331,7 +316,7 @@ class RollingOptimizer:
             H: 规划窗口（天数）
         
         返回:
-            cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
+            cap_forecast[(warehouse, category, date)] = 最大发货量（吨）
         """
         # =====================================================
         # 尝试从外部产能预测 API 获取
@@ -383,7 +368,7 @@ class RollingOptimizer:
             H: 规划窗口（天数）
         
         返回:
-            cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
+            cap_forecast[(warehouse, category, date)] = 最大发货量（吨）
             如果 API 不可用则返回 None
         """
         try:
@@ -434,7 +419,7 @@ class RollingOptimizer:
             categories: 品类列表
         
         返回:
-            cap_forecast[(warehouse, category, day)] = 最大发货量（吨）
+            cap_forecast[(warehouse, category, date)] = 最大发货量（吨）
         """
         cap_forecast = {}
         
@@ -444,7 +429,7 @@ class RollingOptimizer:
             
             # 遍历 H 天
             for i, total_cap in enumerate(daily_caps[:H]):
-                day = today + i
+                date = DateUtils.add_days(today, i)
                 
                 # 将总产能分配到各品类
                 # 策略：按品类数量平均分配（可优化）
@@ -453,7 +438,7 @@ class RollingOptimizer:
                     cap_per_category = total_cap / num_categories
                     
                     for category in categories:
-                        cap_forecast[(wh, category, day)] = cap_per_category
+                        cap_forecast[(wh, category, date)] = cap_per_category
         
         return cap_forecast
     
@@ -568,7 +553,6 @@ def main():
     parser.add_argument("--run", action="store_true", help="运行优化")
     parser.add_argument("--status", action="store_true", help="查看状态")
     parser.add_argument("--reset", action="store_true", help="重置状态")
-    parser.add_argument("--today", type=int, default=None, help="今日 (day 编号，兼容旧版)")
     parser.add_argument("--today-date", type=str, default=None, help="今日 (日期字符串，推荐)")
     parser.add_argument("--H", type=int, default=10, help="规划窗口 (天)")
     
