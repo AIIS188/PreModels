@@ -110,7 +110,7 @@ class RollingOptimizer:
         
         # 4. 准备模型输入
         contracts = self._load_contracts()
-        cap_forecast = self._load_cap_forecast(day, H)
+        cap_forecast = self._load_cap_forecast(date_str, H)  # 使用日期字符串
         weight_profile = self._load_weight_profile()
         delay_profile = self._load_delay_profile()
         
@@ -347,13 +347,14 @@ class RollingOptimizer:
             ("W3", "A"): 120.0, ("W3", "B"): 120.0,
         }
         
-        # 生成 H 天的产能预测
+        # 生成 H 天的产能预测（使用日期字符串）
         cap_forecast = {}
-        for t in range(DateUtils.to_day_number(today), DateUtils.to_day_number(today) + H):
+        for d in range(H):
+            date = DateUtils.add_days(today, d)
             for (w, k), base in default_capacity.items():
                 # 使用简单波动因子
-                factor = 1.05 if (t % 2 == 0) else 0.90
-                cap_forecast[(w, k, t)] = float(base) * factor
+                factor = 1.05 if (d % 2 == 0) else 0.90
+                cap_forecast[(w, k, date)] = float(base) * factor
         
         return cap_forecast
     

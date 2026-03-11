@@ -148,18 +148,17 @@ def test_complex_system_optimization():
     print("=" * 70)
     
     today = "2026-03-10"
-    today_day = DateUtils.to_day_number(today)
     H = 5
     
-    # 准备产能预测（使用 day 编号）
+    # 准备产能预测（使用日期字符串，适配新格式）
     cap_forecast = {}
     for d in range(H):
-        day = today_day + d
-        cap_forecast[("W1", "A", day)] = 200.0
-        cap_forecast[("W1", "B", day)] = 50.0
-        cap_forecast[("W2", "A", day)] = 150.0
+        date = DateUtils.add_days(today, d)
+        cap_forecast[("W1", "A", date)] = 200.0
+        cap_forecast[("W1", "B", date)] = 50.0
+        cap_forecast[("W2", "A", date)] = 150.0
     
-    print(f"今日：{today} (day={today_day})")
+    print(f"今日：{today}")
     print(f"规划窗口：H={H} 天")
     print(f"产能预测：{len(cap_forecast)} 条")
     
