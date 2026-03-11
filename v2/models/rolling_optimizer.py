@@ -300,34 +300,39 @@ class RollingOptimizer:
         """
         加载产能预测/仓库发货能力评估
         
-        支持两种数据源:
-        1. 外部产能预测 API（优先）
-        2. 本地默认配置（降级）
+        使用内部产能预测模型（不依赖外部 API）
         
-        外部 API 返回格式:
+        产能预测模型返回格式:
         {
-            "w1": [350, 360, 370, ...],  // w1 仓库未来每日总产能
-            "w2": [200, 210, 220, ...],
-            "w3": [150, 160, 170, ...]
+            "仓库名": {
+                "日期": {"品类 1": 重量， "品类 2": 重量},
+                ...
+            }
         }
         
         参数:
-            today: 今日（day）
+            today: 今日（日期字符串 "YYYY-MM-DD"）
             H: 规划窗口（天数）
         
         返回:
             cap_forecast[(warehouse, category, date)] = 最大发货量（吨）
         """
         # =====================================================
-        # 尝试从外部产能预测 API 获取
+        # 调用内部产能预测模型
         # =====================================================
         try:
-            external_cap = self._load_capacity_from_api(today, H)
-            if external_cap:
-                self.state_mgr.log(f"从外部 API 加载产能预测 (H={H})")
-                return external_cap
+            from models.capacity_predictor import predict_capacity
+            
+            capacity_data = predict_capacity(today=today, H=H)
+            
+            if capacity_data:
+                self.state_mgr.log(f"从内部模型加载产能预测 (today={today}, H={H})")
+                
+                # 转换为模型需要的格式
+                categories = ["A", "B"]  # 从合同或配置获取
+                return self._convert_capacity_format_new(capacity_data, today, categories)
         except Exception as e:
-            self.state_mgr.log(f"外部产能 API 调用失败：{e}，使用默认配置", "WARNING")
+            self.state_mgr.log(f"内部产能模型调用失败：{e}，使用默认配置", "WARNING")
         
         # =====================================================
         # 降级：使用默认配置
@@ -344,7 +349,7 @@ class RollingOptimizer:
         
         # 生成 H 天的产能预测
         cap_forecast = {}
-        for t in range(today, today + H):
+        for t in range(DateUtils.to_day_number(today), DateUtils.to_day_number(today) + H):
             for (w, k), base in default_capacity.items():
                 # 使用简单波动因子
                 factor = 1.05 if (t % 2 == 0) else 0.90
@@ -396,7 +401,7 @@ class RollingOptimizer:
     def _convert_capacity_format(self, capacity_data: Dict, today: int, H: int, 
                                   categories: List[str]) -> Dict:
         """
-        将产能预测 API 的格式转换为模型需要的格式
+        将产能预测 API 的格式转换为模型需要的格式（旧版，兼容总产能格式）
         
         输入格式:
         {
@@ -439,6 +444,61 @@ class RollingOptimizer:
                     
                     for category in categories:
                         cap_forecast[(wh, category, date)] = cap_per_category
+        
+        return cap_forecast
+    
+    def _convert_capacity_format_new(self, capacity_data: Dict[str, Dict[str, Dict[str, float]]], 
+                                      today: str, categories: List[str]) -> Dict:
+        """
+        将产能预测模型的新格式转换为模型需要的格式
+        
+        输入格式 (新):
+        {
+            "仓库名": {
+                "日期": {"品类 1": 重量， "品类 2": 重量},
+                ...
+            }
+        }
+        
+        示例:
+        {
+            "W1": {
+                "2026-03-11": {"A": 220.0, "B": 60.0},
+                "2026-03-12": {"A": 231.0, "B": 63.0},
+            },
+            "W2": {
+                "2026-03-11": {"A": 80.0, "B": 220.0},
+                ...
+            }
+        }
+        
+        输出格式:
+        {
+            ("W1", "A", "2026-03-11"): 220.0,
+            ("W1", "B", "2026-03-11"): 60.0,
+            ("W1", "A", "2026-03-12"): 231.0,
+            ...
+        }
+        
+        参数:
+            capacity_data: 产能预测模型返回的数据（包含品类信息）
+            today: 今日（日期字符串）
+            categories: 品类列表
+        
+        返回:
+            cap_forecast[(warehouse, category, date)] = 最大发货量（吨）
+        """
+        cap_forecast = {}
+        
+        for warehouse, dates in capacity_data.items():
+            # 仓库名标准化（转为大写）
+            wh = warehouse.upper()
+            
+            # 遍历每个日期
+            for date_str, categories_cap in dates.items():
+                # 遍历每个品类
+                for category, capacity in categories_cap.items():
+                    cap_forecast[(wh, category, date_str)] = float(capacity)
         
         return cap_forecast
     
