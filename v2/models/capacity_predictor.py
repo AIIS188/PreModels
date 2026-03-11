@@ -35,15 +35,26 @@ class CapacityPredictor:
     
     基于历史数据、设备状态、原材料供应等因素
     预测各仓库未来 H 天的产能（分品类）
+    
+    支持动态品类配置：
+        predictor = CapacityPredictor(categories=["A", "B", "C"])
     """
     
-    def __init__(self):
-        """初始化预测模型"""
+    def __init__(self, categories: List[str] = None):
+        """
+        初始化预测模型
+        
+        参数:
+            categories: 品类列表，None 则使用默认 ["A", "B"]
+        """
+        self.categories = categories or ["A", "B"]
+        
         # 仓库基础产能配置（吨/天）
+        # 注意：这里只配置基础品类，其他品类会动态分配
         self.base_capacity = {
-            "W1": {"A": 220.0, "B": 60.0},   # W1 仓库：A 品类 220 吨，B 品类 60 吨
-            "W2": {"A": 80.0, "B": 220.0},   # W2 仓库：A 品类 80 吨，B 品类 220 吨
-            "W3": {"A": 120.0, "B": 120.0},  # W3 仓库：A 品类 120 吨，B 品类 120 吨
+            "W1": {"A": 220.0, "B": 60.0},   # W1 仓库
+            "W2": {"A": 80.0, "B": 220.0},   # W2 仓库
+            "W3": {"A": 120.0, "B": 120.0},  # W3 仓库
         }
         
         # 产能波动因子（模拟设备维护、原材料供应等影响）
@@ -53,13 +64,14 @@ class CapacityPredictor:
             "maintenance": 0.7,  # 维护日
         }
     
-    def predict(self, today: str, H: int = 10) -> Dict[str, Dict[str, Dict[str, float]]]:
+    def predict(self, today: str, H: int = 10, categories: List[str] = None) -> Dict[str, Dict[str, Dict[str, float]]]:
         """
         预测产能
         
         参数:
             today: 今日（日期字符串 "YYYY-MM-DD"）
             H: 预测天数
+            categories: 品类列表，None 则使用初始化时的配置
         
         返回:
             {
@@ -72,19 +84,22 @@ class CapacityPredictor:
         示例:
             {
                 "W1": {
-                    "2026-03-11": {"A": 220.0, "B": 60.0},
-                    "2026-03-12": {"A": 231.0, "B": 63.0},
+                    "2026-03-11": {"A": 220.0, "B": 60.0, "C": 100.0},
+                    "2026-03-12": {"A": 231.0, "B": 63.0, "C": 105.0},
                     ...
                 },
                 "W2": {
-                    "2026-03-11": {"A": 80.0, "B": 220.0},
+                    "2026-03-11": {"A": 80.0, "B": 220.0, "C": 90.0},
                     ...
                 }
             }
         """
+        # 使用传入的品类或默认品类
+        use_categories = categories or self.categories
+        
         result = {}
         
-        for warehouse, categories in self.base_capacity.items():
+        for warehouse in self.base_capacity.keys():
             result[warehouse] = {}
             
             for t in range(H):
@@ -96,10 +111,28 @@ class CapacityPredictor:
                 factor = self._calculate_capacity_factor(date, warehouse)
                 
                 # 预测各品类产能
-                result[warehouse][date_str] = {
-                    category: base * factor 
-                    for category, base in categories.items()
-                }
+                # 策略：基础品类使用配置的产能，其他品类平均分配
+                warehouse_caps = self.base_capacity[warehouse]
+                base_categories = list(warehouse_caps.keys())
+                new_categories = [c for c in use_categories if c not in base_categories]
+                
+                # 计算总产能
+                total_base_cap = sum(warehouse_caps.values())
+                
+                # 如果有新品类，将总产能重新分配
+                if new_categories:
+                    # 所有品类平均分配总产能
+                    cap_per_category = total_base_cap / len(use_categories)
+                    result[warehouse][date_str] = {
+                        category: cap_per_category * factor
+                        for category in use_categories
+                    }
+                else:
+                    # 只有基础品类，直接使用配置
+                    result[warehouse][date_str] = {
+                        category: base * factor 
+                        for category, base in warehouse_caps.items()
+                    }
         
         return result
     
@@ -193,13 +226,14 @@ class CapacityPredictor:
 # 兼容旧版 API 格式
 # =========================
 
-def predict_capacity(today: str, H: int = 10) -> Dict[str, Dict[str, Dict[str, float]]]:
+def predict_capacity(today: str, H: int = 10, categories: List[str] = None) -> Dict[str, Dict[str, Dict[str, float]]]:
     """
     产能预测函数（主接口）
     
     参数:
         today: 今日（日期字符串 "YYYY-MM-DD"）
         H: 预测天数
+        categories: 品类列表，None 则使用默认 ["A", "B"]
     
     返回:
         {
@@ -209,8 +243,8 @@ def predict_capacity(today: str, H: int = 10) -> Dict[str, Dict[str, Dict[str, f
             }
         }
     """
-    predictor = CapacityPredictor()
-    return predictor.predict(today, H)
+    predictor = CapacityPredictor(categories=categories)
+    return predictor.predict(today, H, categories=categories)
 
 
 def predict_capacity_total(today: str, H: int = 10) -> Dict[str, List[float]]:

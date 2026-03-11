@@ -1,0 +1,40 @@
+[
+  {
+    "cid": "HT-2026-001",
+    "receiver": "R1",
+    "Q": 1000.0,
+    "start_day": "2026-03-10",
+    "end_day": "2026-03-20",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 800.0
+      },
+      {
+        "product_name": "B",
+        "unit_price": 1200.0
+      },
+      {
+        "product_name": "C",
+        "unit_price": 1000.0
+      }
+    ]
+  },
+  {
+    "cid": "HT-2026-002",
+    "receiver": "R2",
+    "Q": 800.0,
+    "start_day": "2026-03-10",
+    "end_day": "2026-03-18",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 850.0
+      },
+      {
+        "product_name": "D",
+        "unit_price": 950.0
+      }
+    ]
+  }
+]

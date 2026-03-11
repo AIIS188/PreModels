@@ -260,6 +260,63 @@ class RollingOptimizer:
         except Exception as e:
             self.state_mgr.log(f"缓存合同失败：{e}", "WARNING")
     
+    def _get_categories_from_contracts(self) -> List[str]:
+        """
+        从合同数据中提取所有品类
+        
+        返回:
+            品类列表，如 ["A", "B"]
+        
+        实现逻辑:
+        1. 优先从已加载的合同对象中获取
+        2. 降级：从缓存的合同文件中获取
+        3. 最后降级：返回空列表（调用方使用默认品类）
+        """
+        categories_set = set()
+        
+        # 方法 1: 尝试从当前状态获取合同（如果已加载）
+        try:
+            contracts = self._load_contracts()
+            for contract in contracts:
+                # 从 products 字段获取品类
+                if hasattr(contract, 'products') and contract.products:
+                    for product in contract.products:
+                        if isinstance(product, dict) and 'product_name' in product:
+                            categories_set.add(product['product_name'])
+                        elif hasattr(product, 'product_name'):
+                            categories_set.add(product.product_name)
+                
+                # 向后兼容：从 allowed_categories 获取
+                if hasattr(contract, 'allowed_categories'):
+                    categories_set.update(contract.allowed_categories)
+            
+            if categories_set:
+                return sorted(list(categories_set))
+        except Exception as e:
+            self.state_mgr.log(f"从合同对象获取品类失败：{e}", "WARNING")
+        
+        # 方法 2: 从缓存文件获取
+        try:
+            cache_file = Path(self.state_mgr.state_dir) / "contracts_cache.json"
+            if cache_file.exists():
+                import json
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                for contract in data:
+                    if 'products' in contract and contract['products']:
+                        for product in contract['products']:
+                            if isinstance(product, dict) and 'product_name' in product:
+                                categories_set.add(product['product_name'])
+                
+                if categories_set:
+                    return sorted(list(categories_set))
+        except Exception as e:
+            self.state_mgr.log(f"从缓存文件获取品类失败：{e}", "WARNING")
+        
+        # 方法 3: 返回空列表（调用方使用默认品类）
+        return []
+    
     def _load_cached_contracts(self) -> Optional[List[Contract]]:
         """
         从缓存文件加载合同数据
@@ -323,13 +380,19 @@ class RollingOptimizer:
         try:
             from models.capacity_predictor import predict_capacity
             
-            capacity_data = predict_capacity(today=today, H=H)
+            # 从合同数据中获取真实品类
+            categories = self._get_categories_from_contracts()
+            if not categories:
+                categories = ["A", "B"]  # 降级：默认品类
+                self.state_mgr.log(f"未找到合同品类，使用默认品类：{categories}", "WARNING")
+            
+            self.state_mgr.log(f"合同品类：{categories}")
+            
+            # 调用产能预测，传入品类列表
+            capacity_data = predict_capacity(today=today, H=H, categories=categories)
             
             if capacity_data:
-                self.state_mgr.log(f"从内部模型加载产能预测 (today={today}, H={H})")
-                
-                # 转换为模型需要的格式
-                categories = ["A", "B"]  # 从合同或配置获取
+                self.state_mgr.log(f"从内部模型加载产能预测 (today={today}, H={H}, categories={categories})")
                 return self._convert_capacity_format_new(capacity_data, today, categories)
         except Exception as e:
             self.state_mgr.log(f"内部产能模型调用失败：{e}，使用默认配置", "WARNING")
