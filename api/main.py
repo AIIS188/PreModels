@@ -128,7 +128,12 @@ def load_contracts():
 
 def load_plan(day: int):
     """加载指定日的计划"""
-    plan_file = STATE_DIR / f"plan_day{day}.json"
+    # 支持两种格式：plan_{date}.json 和 plan_day{N}.json（向后兼容）
+    from core.date_utils import DateUtils
+    day_num = day if isinstance(day, int) else DateUtils.to_day_number(day)
+    plan_file_new = STATE_DIR / f"plan_{day}.json" if isinstance(day, str) else STATE_DIR / f"plan_day{day}.json"
+    plan_file_old = STATE_DIR / f"plan_day{day_num}.json"
+    plan_file = plan_file_new if plan_file_new.exists() else plan_file_old
     if not plan_file.exists():
         return None
     
@@ -354,7 +359,7 @@ def get_contract_progress():
     # 扫描所有计划文件
     progress = {cid: 0.0 for cid in contracts.keys()}
     
-    for plan_file in STATE_DIR.glob("plan_day*.json"):
+    for plan_file in STATE_DIR.glob("plan_*.json"):
         with open(plan_file, 'r', encoding='utf-8') as f:
             plan = json.load(f)
             for shipment in plan.get('shipments', []):
@@ -405,7 +410,7 @@ def get_statistics():
     days_count = 0
     daily_totals = []
     
-    for plan_file in STATE_DIR.glob("plan_day*.json"):
+    for plan_file in STATE_DIR.glob("plan_*.json"):
         with open(plan_file, 'r', encoding='utf-8') as f:
             plan = json.load(f)
             day_tons = sum(s['tons'] for s in plan.get('shipments', []))

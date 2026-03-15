@@ -204,7 +204,7 @@ def test_rolling_optimizer():
         shutil.rmtree(TEST_STATE_DIR)
     
     # 创建优化器
-    optimizer = RollingOptimizer(state_dir=TEST_STATE_DIR, api_base_url="http://localhost:8007")
+    optimizer = RollingOptimizer(state_dir=TEST_STATE_DIR)
     print(f"✅ 优化器已创建")
     
     # 初始化状态

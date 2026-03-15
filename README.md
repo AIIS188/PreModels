@@ -394,7 +394,7 @@ api = PDAPIClient(base_url="http://127.0.0.1:8007")
 - `state/state.json` - 当前状态
 - `state/history/state_day*.json` - 历史快照
 - `state/logs/*.log` - 执行日志
-- `state/plan_day*.json` - 每日计划
+- `state/plan_*.json` - 每日计划（如 `plan_2026-03-15.json`）
 - `state/contracts_cache.json` - 合同缓存
 
 ### 查看日志
@@ -404,7 +404,7 @@ api = PDAPIClient(base_url="http://127.0.0.1:8007")
 tail -f state/logs/*.log
 
 # 查看今日计划
-cat state/plan_day10.json | python3 -m json.tool
+cat state/plan_2026-03-10.json | python3 -m json.tool
 ```
 
 ---

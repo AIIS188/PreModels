@@ -15,7 +15,12 @@ from datetime import datetime
 
 def load_plan(today):
     """加载今日计划"""
-    plan_file = Path(f"./state/plan_day{today}.json")
+    # 支持日期字符串格式
+    from core.date_utils import DateUtils
+    if isinstance(today, int):
+        plan_file = Path(f"./state/plan_day{today}.json")
+    else:
+        plan_file = Path(f"./state/plan_{today}.json")
     if not plan_file.exists():
         print(f"错误：计划文件不存在：{plan_file}")
         return None

@@ -11,7 +11,7 @@ test_balance_shipping.py
 4. 生成均衡性报告
 
 使用方式：
-    python3 test_balance_shipping.py --start-date 2026-03-10 --days 10
+    python3 test_balance_shipping.py --start-date 2026-03-10 
 """
 
 import sys
@@ -133,7 +133,7 @@ def run_balance_test(start_date="2026-03-10", num_days=10):
     # 初始化优化器
     optimizer = RollingOptimizer(
         state_dir="./state",
-        api_base_url="http://127.0.0.1:8007",
+        api_base_url="http://8.136.35.215:8007",
     )
     
     # 每日运行记录

@@ -122,7 +122,7 @@ def main():
     print("=" * 60)
     
     # 初始化 API 客户端
-    api = PDAPIClient(base_url="http://127.0.0.1:8007")
+    api = PDAPIClient(base_url="http://8.136.35.215:8007")
     
     # 运行测试
     tests = [

@@ -1,0 +1,67 @@
+[
+  {
+    "cid": "HT-001",
+    "receiver": "R1",
+    "Q": 1000.0,
+    "start_day": "2026-03-01",
+    "end_day": "2026-03-25",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 800.0
+      }
+    ]
+  },
+  {
+    "cid": "HT-002",
+    "receiver": "R1",
+    "Q": 800.0,
+    "start_day": "2026-03-10",
+    "end_day": "2026-03-30",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 820.0
+      }
+    ]
+  },
+  {
+    "cid": "HT-003",
+    "receiver": "R2",
+    "Q": 500.0,
+    "start_day": "2026-03-05",
+    "end_day": "2026-03-18",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 790.0
+      }
+    ]
+  },
+  {
+    "cid": "HT-OLD-001",
+    "receiver": "R1",
+    "Q": 600.0,
+    "start_day": "2026-02-01",
+    "end_day": "2026-03-10",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 750.0
+      }
+    ]
+  },
+  {
+    "cid": "HT-OLD-002",
+    "receiver": "R2",
+    "Q": 400.0,
+    "start_day": "2026-02-15",
+    "end_day": "2026-03-14",
+    "products": [
+      {
+        "product_name": "A",
+        "unit_price": 760.0
+      }
+    ]
+  }
+]

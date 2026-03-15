@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models.common_utils_v2 import Contract, default_global_delay_pmf
 from models.complex_system_v2 import solve_lp_rolling_H_days
-from core.api_client import PDAPIClient, get_confirmed_arrivals, get_weighed_truck_ids, filter_confirmed_arrivals
+from core.api_client import PDAPIClient
 from core.state_manager import StateManager, ModelState
 from core.date_utils import DateUtils
 
@@ -50,7 +50,7 @@ class RollingOptimizer:
     def __init__(
         self,
         state_dir: str = "./state",
-        api_base_url: str = "http://localhost:8000",
+        api_base_url: str = "http://8.136.35.215:8007",
     ):
         self.state_mgr = StateManager(state_dir)
         self.api = PDAPIClient(api_base_url)
@@ -77,53 +77,55 @@ class RollingOptimizer:
         else:
             date_str = DateUtils.today()
         
-        # 转换为 day 编号 (内部逻辑使用)
-        day = DateUtils.to_day_number(date_str)
         
-        self.state_mgr.log(f"开始滚动优化 (date={date_str}, day={day})")
+        self.state_mgr.log(f"开始滚动优化 (date={date_str}, H={H})")
         
-        # 1. 加载状态
-        state = self.state_mgr.load_state()
-        if state is None:
-            self.state_mgr.log("状态不存在，需要先初始化", "ERROR")
-            raise RuntimeError("状态不存在，请先调用 initialize_state()")
-        
-        # 2. 获取最新磅单（真实到货）
-        today_arrivals = get_confirmed_arrivals(self.api, date_str)
-        self.state_mgr.log(f"获取今日 ({date_str}) 到货：{today_arrivals}")
-        
-        # 3. 更新已到货量和在途列表
-        updated_delivered = state.delivered_so_far.copy()
-        for cid, tons in today_arrivals.items():
-            updated_delivered[cid] = updated_delivered.get(cid, 0.0) + tons
-        
-        # 获取今日已过磅的车牌号集合
-        weighed_trucks = get_weighed_truck_ids(self.api, date_str)
-        self.state_mgr.log(f"今日已过磅车辆：{len(weighed_trucks)} 辆")
-        
-        # 从在途列表中移除已过磅的报单
-        updated_in_transit = filter_confirmed_arrivals(
-            state.in_transit_orders,
-            weighed_trucks,
-        )
-        self.state_mgr.log(f"更新后在途：{len(updated_in_transit)} 单")
-        
-        # 4. 准备模型输入
+        # 1. 加载合同
         contracts = self._load_contracts()
+        
+        # 2. 刷新状态（从 PD API 获取最新磅单并更新 state.json）
+        #    此步骤会自动：
+        #    - 初始化 state（如果不存在）
+        #    - 获取今日磅单并累加 delivered_so_far
+        #    - 获取已过磅车牌号并更新 in_transit_orders
+        #    - 清理过期合同数据
+        state = self.state_mgr.refresh_state(
+            api=self.api,
+            today=date_str,
+            contracts=contracts,
+            auto_init=True,
+        )
+        
+        # 3. 准备模型输入
         cap_forecast = self._load_cap_forecast(date_str, H)  # 使用日期字符串
         weight_profile = self._load_weight_profile()
         delay_profile = self._load_delay_profile()
         
+        # 4. 准备模型输入（仓库和品类从合同和产能预测中提取，不依赖在途报单）
+        #    原因：当 in_transit_orders 为空时，需要确保模型仍有变量可求解
+        warehouses_from_transit = list(set(o["warehouse"] for o in state.in_transit_orders)) if state.in_transit_orders else []
+        categories_from_transit = list(set(o["category"] for o in state.in_transit_orders)) if state.in_transit_orders else []
+        
+        # 从产能预测中提取仓库和品类（更可靠）
+        warehouses_from_cap = list(set(w for (w, k, t) in cap_forecast.keys()))
+        categories_from_cap = list(set(k for (w, k, t) in cap_forecast.keys()))
+        
+        # 合并（优先使用产能预测的，因为在途可能为空）
+        warehouses = list(set(warehouses_from_cap + warehouses_from_transit))
+        categories = list(set(categories_from_cap + categories_from_transit))
+        
+        self.state_mgr.log(f"模型输入：warehouses={warehouses}, categories={categories}")
+        
         # 5. 重新运行模型（注意：solve_lp_rolling_H_days 使用日期字符串）
         result = solve_lp_rolling_H_days(
-            warehouses=list(set(o["warehouse"] for o in updated_in_transit)),
-            categories=list(set(o["category"] for o in updated_in_transit)),
+            warehouses=warehouses,
+            categories=categories,
             today=date_str,  # 使用日期字符串
             H=H,
             contracts=contracts,
             cap_forecast=cap_forecast,
-            delivered_so_far=updated_delivered,
-            in_transit_orders=updated_in_transit,
+            delivered_so_far=state.delivered_so_far,
+            in_transit_orders=state.in_transit_orders,
             weight_profile=weight_profile,
             delay_profile=delay_profile,
             global_delay_pmf=default_global_delay_pmf(),
@@ -133,15 +135,17 @@ class RollingOptimizer:
         
         x_today, x_horizon, arrival_plan, trucks, mixing = result
         
-        # 6. 保存状态和计划
+        # 5. 保存状态和计划（传入 contracts 用于清理过期数据）
         self.state_mgr.update_state(
-            delivered_so_far=updated_delivered,
-            in_transit_orders=updated_in_transit,
+            delivered_so_far=state.delivered_so_far,
+            in_transit_orders=state.in_transit_orders,
             x_prev=x_horizon,  # 保存窗口计划用于明日稳定性
             today=date_str,  # 使用日期字符串
+            contracts=contracts,  # 传入合同列表用于清理过期数据
         )
         
-        self._save_plan(x_today, trucks, mixing, day)
+        # 保存计划文件
+        self._save_plan(x_today, trucks, mixing, date_str)
         
         self.state_mgr.log(f"优化完成，今日计划：{len(x_today)} 条记录")
         
@@ -173,7 +177,7 @@ class RollingOptimizer:
         """
         # 尝试从 PD API 加载
         try:
-            pd_contracts = self.api.get_contracts(page=1, page_size=100)
+            pd_contracts = self.api.get_contracts(page=1, page_size=20)
             
             if pd_contracts:
                 contracts = self._convert_pd_contracts(pd_contracts)
@@ -634,11 +638,12 @@ class RollingOptimizer:
         x_today: Dict,
         trucks: Dict,
         mixing: Dict,
-        today: int,
+        today: str,
     ):
         """保存今日计划到文件"""
         from pathlib import Path
-        plan_file = Path(self.state_mgr.state_dir) / f"plan_day{today}.json"
+        # 使用日期字符串作为文件名
+        plan_file = Path(self.state_mgr.state_dir) / f"plan_{today}.json"
         plan_file.parent.mkdir(parents=True, exist_ok=True)
         
         # 转换为可序列化格式
@@ -692,7 +697,7 @@ def main():
         state = optimizer.state_mgr.load_state()
         if state:
             print(json.dumps({
-                "last_run_day": state.last_run_day,
+                "last_run_date": state.last_run_date,
                 "last_updated": state.last_updated,
                 "delivered_so_far": state.delivered_so_far,
                 "in_transit_count": len(state.in_transit_orders),

@@ -156,7 +156,7 @@ class PDAPIClient:
     - GET  /healthz                    : 健康检查
     """
     
-    def __init__(self, base_url: str = "http://127.0.0.1:8007"):
+    def __init__(self, base_url: str = "http://8.136.35.215/:8007"):
         self.base_url = base_url
         self.session = requests.Session()
         self.token: Optional[str] = None
@@ -780,6 +780,80 @@ def get_weighed_truck_ids(
     
     return truck_ids
 
+def get_in_transit_orders(
+    api: PDAPIClient,
+    today: str,
+    cid: Optional[str] = None,
+) -> List[Dict]:
+    """
+    获取在途报单列表（所有待确认状态的报货单）
+    
+    逻辑：
+    1. 从 PD API 获取所有状态为"待确认"的报货单（包括历史的）
+    2. 转换为统一的在途报单格式
+    
+    参数:
+        api: API 客户端
+        today: 今日日期 (YYYY-MM-DD)（用于日志，实际获取全部待确认）
+        cid: 合同编号，None=全部
+    
+    返回:
+        在途报单列表
+        格式：[{order_id, cid, warehouse, category, weight, ship_day, truck_id, ...}, ...]
+    """
+    # 获取所有待确认状态的报货单（不限制日期，获取全部在途）
+    deliveries = api.get_deliveries(exact_status="待确认", exact_contract_no=cid)
+    
+    in_transit_orders = []
+    for d in deliveries:
+        in_transit_orders.append({
+            "order_id": f"DL{d.id}",
+            "cid": d.contract_no,
+            "warehouse": d.warehouse or d.target_factory_name,
+            "category": d.product_name,
+            "weight": d.quantity,
+            "ship_day": d.report_date,
+            "truck_id": d.vehicle_no,
+            # 其他字段可根据需要添加
+        })
+    return in_transit_orders
+
+
+def get_shipped_today(
+    api: PDAPIClient,
+    today: str,
+    cid: Optional[str] = None,
+) -> List[Dict]:
+    """
+    获取今日发货的报货单（ship_day = today）
+    
+    逻辑：
+    1. 从 PD API 获取报货日期为今天的报货单
+    2. 转换为统一的报单格式
+    
+    参数:
+        api: API 客户端
+        today: 今日日期 (YYYY-MM-DD)
+        cid: 合同编号，None=全部
+    
+    返回:
+        今日发货报单列表
+        格式：[{order_id, cid, warehouse, category, weight, ship_day, truck_id, ...}, ...]
+    """
+    deliveries = api.get_deliveries(exact_report_date=today, exact_contract_no=cid)
+    
+    shipped = []
+    for d in deliveries:
+        shipped.append({
+            "order_id": f"DL{d.id}",
+            "cid": d.contract_no,
+            "warehouse": d.warehouse or d.target_factory_name,
+            "category": d.product_name,
+            "weight": d.quantity,
+            "ship_day": d.report_date,
+            "truck_id": d.vehicle_no,
+        })
+    return shipped
 
 def filter_confirmed_arrivals(
     in_transit_orders: List[Dict],
@@ -837,9 +911,9 @@ if __name__ == "__main__":
     # 1. 健康检查
     print("\n1. 健康检查")
     if api.health_check():
-        print("   ✅ PD API 连接正常")
+        print("    PD API 连接正常")
     else:
-        print("   ❌ PD API 连接失败")
+        print("    PD API 连接失败")
         sys.exit(1)
     
     # 2. 获取报货单

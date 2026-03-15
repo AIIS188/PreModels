@@ -156,7 +156,17 @@ def solve_lp_rolling_H_days(
     A_new: Dict[Tuple[str, str], pulp.LpAffineExpression] = {}
     waste_exp: Dict[str, pulp.LpAffineExpression] = {}
 
+    # 调试：检查 contracts
+    import os
+    if os.environ.get('LP_DEBUG'):
+        print(f"[LP Debug] contracts={len(contracts)}, warehouses={warehouses}, categories={categories}")
+        for c in contracts:
+            print(f"  - {c.cid}: allowed={c.allowed_categories}")
+    
     for c in contracts:
+        if os.environ.get('LP_DEBUG'):
+            print(f"[LP Debug] 处理合同 {c.cid}...")
+        
         waste_terms = []
         for d in arrival_days:
             expr_terms = []
@@ -190,7 +200,7 @@ def solve_lp_rolling_H_days(
 
         # 计算剩余有效天数
         remain_start = today if DateUtils.diff_days(today, c.start_day) > 0 else c.start_day
-        if DateUtils.diff_days(remain_start, c.end_day) > 0:
+        if DateUtils.diff_days(remain_start, c.end_day) < 0:  # 修复：remain_start > end_day 时跳过
             continue
 
         T = DateUtils.diff_days(remain_start, c.end_day) + 1
@@ -228,7 +238,17 @@ def solve_lp_rolling_H_days(
         short[cid] = pulp.LpVariable(f"short_{cid}", lowBound=0)
         expected_total = delivered + future_intransit_mu + add_valid_expr
         #  目标：至少完成 95% 合同量
-        model += (short[cid] >= 0.95 * c.Q - expected_total, f"ShortDef_{cid}")
+        short_constraint = (short[cid] >= 0.95 * c.Q - expected_total, f"ShortDef_{cid}")
+        model += short_constraint
+        
+        # 调试输出
+        import os
+        if os.environ.get('LP_DEBUG'):
+            print(f"[LP Debug] 合同 {cid}:")
+            print(f"  delivered={delivered}, future_intransit={future_intransit_mu:.2f}")
+            print(f"  add_valid_terms={len(add_valid_terms)}, add_valid_expr={add_valid_expr}")
+            print(f"  ShortDef: short >= {0.95 * c.Q} - ({delivered} + {future_intransit_mu:.2f} + A_new)")
+            print(f"  约束已添加：{short_constraint[0]}")
 
         # 超发硬约束（保守：在途用 hi，允许 105%）
         model += (delivered + future_intransit_hi + add_valid_expr <= 1.05 * c.Q, f"OverCap_{cid}")
@@ -299,7 +319,22 @@ def solve_lp_rolling_H_days(
     )
 
     # 求解
-    model.solve(pulp.PULP_CBC_CMD(msg=False))
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=60)
+    solve_status = model.solve(solver)
+    
+    # 调试输出
+    import os
+    if os.environ.get('LP_DEBUG'):
+        print(f"[LP Debug] 求解状态：{pulp.LpStatus[solve_status]}")
+        print(f"[LP Debug] 变量数：{len(x)}")
+        print(f"[LP Debug] 约束数：{len(model.constraints)}")
+        print(f"[LP Debug] 目标函数值：{pulp.value(model.objective)}")
+        
+        # 输出非零变量
+        non_zero = {k: v.value() for k, v in x.items() if v.value() and v.value() > 1e-6}
+        print(f"[LP Debug] 非零变量：{len(non_zero)} 个")
+        for k, v in list(non_zero.items())[:10]:
+            print(f"  {k}: {v:.2f}")
 
     # 10) 输出
     x_horizon_plan: Dict[Tuple[str, str, str, int], float] = {}

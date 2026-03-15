@@ -1,0 +1,19 @@
+{
+  "test_date": "2026-03-15",
+  "planning_horizon": 10,
+  "results": {
+    "shipments_today": 3,
+    "total_tons_today": 146.347971,
+    "trucks_today": 3,
+    "arrival_plan_entries": 0
+  },
+  "state": {
+    "contracts_count": 3,
+    "in_transit_count": 5
+  },
+  "validation": {
+    "has_shipments": true,
+    "expired_cleaned": true,
+    "expired_transit_cleaned": true
+  }
+}

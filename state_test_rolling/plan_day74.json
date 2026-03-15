@@ -1,0 +1,49 @@
+{
+  "today": "2026-03-15",
+  "shipments": [
+    {
+      "warehouse": "W2",
+      "cid": "HT-001",
+      "category": "A",
+      "tons": 49.1334
+    },
+    {
+      "warehouse": "W2",
+      "cid": "HT-002",
+      "category": "A",
+      "tons": 49.5675
+    },
+    {
+      "warehouse": "W1",
+      "cid": "HT-003",
+      "category": "A",
+      "tons": 47.647071
+    }
+  ],
+  "trucks": [
+    {
+      "warehouse": "W2",
+      "cid": "HT-001",
+      "trucks": 2,
+      "mixing": {
+        "A": 49.1334
+      }
+    },
+    {
+      "warehouse": "W2",
+      "cid": "HT-002",
+      "trucks": 2,
+      "mixing": {
+        "A": 49.5675
+      }
+    },
+    {
+      "warehouse": "W1",
+      "cid": "HT-003",
+      "trucks": 2,
+      "mixing": {
+        "A": 47.647071
+      }
+    }
+  ]
+}
